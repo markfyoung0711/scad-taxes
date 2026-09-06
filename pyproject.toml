@@ -1,0 +1,20 @@
+[project]
+name = "scad-taxes"
+version = "0.1.0"
+description = "Smith County (TX) appraisal & tax history warehouse"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.32",
+    "lxml>=5.2",
+    "duckdb>=1.1",
+]
+
+[project.scripts]
+scad = "scad.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scad"]
