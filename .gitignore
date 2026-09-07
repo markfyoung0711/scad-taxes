@@ -4,3 +4,4 @@ __pycache__/
 
 # All acquired and derived data stays out of git; it belongs in GCP.
 data/
+data/*.log

@@ -5,7 +5,7 @@ import argparse
 import random
 import sys
 
-from . import acquire, export, geocode, parse, stage, warehouse
+from . import acquire, crawl, export, geocode, parse, stage, warehouse
 from .http import Client
 
 
@@ -65,6 +65,21 @@ def cmd_fetch(args) -> int:
         path = stage.stage_parcel(record)
         years = [v["tax_year"] for v in record["values"]]
         print(f"{record['parcel']['account']}  {min(years)}-{max(years)}  -> {path.name}", file=sys.stderr)
+    return 0
+
+
+def cmd_crawl(args) -> int:
+    """Fetch every parcel matching the criteria, resumably."""
+    from pathlib import Path
+
+    log = Path(args.log) if args.log else None
+    result = crawl.crawl(_criteria(args), workers=args.workers, rate=args.rate,
+                         limit=args.limit, label=args.label, log=log)
+    print(f"staged {result.done} of {result.total} "
+          f"({result.skipped} already held, {len(result.failed)} failed)",
+          file=sys.stderr)
+    if result.failed:
+        print("failed: " + ", ".join(result.failed[:20]), file=sys.stderr)
     return 0
 
 
@@ -164,6 +179,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="fetch these Property IDs directly, skipping the search "
                         "(dotted or undotted; repeatable)")
     p.set_defaults(func=cmd_fetch)
+
+    p = sub.add_parser("crawl", help="fetch every matching parcel, resumably")
+    add_search_args(p)
+    p.add_argument("--workers", type=int, default=3)
+    p.add_argument("--rate", type=float, default=3.0,
+                   help="requests per second across all workers")
+    p.add_argument("--limit", type=int, help="stop after N new parcels")
+    p.add_argument("--log", help="file to write progress into")
+    p.set_defaults(func=cmd_crawl)
 
     p = sub.add_parser("geocode", help="locate warehoused parcels against county GIS")
     p.set_defaults(func=cmd_geocode)
