@@ -43,14 +43,14 @@ SELECT
     l.gis_city,
     l.location_source,
     c.tax_year,
-    c.appraised_value,
+    c.market_value,
     c.assessed_value,
     c.total_tax,
-    c.appraised_pct_yoy,
+    c.market_pct_yoy,
     c.tax_pct_yoy,
     c.base_year,
     c.tax_base_year,
-    c.appraised_pct_since_base,
+    c.market_pct_since_base,
     c.tax_pct_since_base
 FROM mart.dim_parcel p
 JOIN mart.dim_parcel_location l ON l.gis_parcel_id = p.gis_parcel_id

@@ -1,4 +1,4 @@
-"""Appraised value and taxes over time, indexed to a common base, plus a map.
+"""Market value and taxes over time, indexed to a common base, plus a map.
 
 Value and tax are different units, so they are rebased to 100 in each account's
 first published year. That puts them on one honest axis: the gap between a
@@ -26,7 +26,7 @@ st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
 
 # "Tax paid" is the whole levy in dollars, not a rate: the district publishes
 # rates per $100 of value, but what a line here traces is the bill itself.
-MEASURES = [("appraised_value", "Appraised value", "solid"),
+MEASURES = [("market_value", "Market value", "solid"),
             ("total_tax", "Tax paid (total $)", "dash")]
 MAX_LABELLED = 8
 MAX_SERIES = 8
@@ -84,7 +84,7 @@ with st.sidebar:
                       else ["Sector"])
     colour_mode = st.radio(
         "Color by", colour_choices, horizontal=True,
-        help="Account gives each parcel its own hue, with solid for appraised "
+        help="Account gives each parcel its own hue, with solid for market "
              "value and dashed for tax paid. Sector groups them once there "
              "are more parcels than a palette can hold.")
     mode = st.radio("Theme", ["light", "dark"], horizontal=True)
@@ -112,9 +112,9 @@ meta = acct_df.set_index("account")
 # warehouse -- so filtering the list never repaints the sectors that remain.
 sector_color = {s: t["series"][i % len(t["series"])]
                 for i, s in enumerate(sorted(acct_df.sector.dropna().unique()))}
-# Colouring by measure puts appraised value against tax paid for one account;
+# Colouring by measure puts market value against tax paid for one account;
 # the account is then carried by the dash pattern instead.
-measure_color = {"appraised_value": t["series"][0], "total_tax": t["series"][1]}
+measure_color = {"market_value": t["series"][0], "total_tax": t["series"][1]}
 account_color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(picked)}
 
 # With one parcel there is no identity to encode, so colour is free to carry
@@ -122,7 +122,7 @@ account_color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(pick
 # colour belongs to the parcel and the dash tells the two measures apart.
 SOLO = len(picked) == 1
 
-st.title("Appraised value & taxes over time")
+st.title("Market value & taxes over time")
 st.caption(
     f"{len(picked)} account(s) · {int(years.tax_year.min())}–{int(years.tax_year.max())} · "
     "each series rebased to 100 in its own first published year"
@@ -147,7 +147,7 @@ for n, acct in enumerate(picked):
         if idx is None:
             continue
 
-        dash = sector_dash  # solid for appraised value, dashed for tax paid
+        dash = sector_dash  # solid for market value, dashed for tax paid
         if SOLO:
             # Colour is free to carry the measure with a single parcel, but the
             # dash still means what it means everywhere else.
@@ -175,13 +175,13 @@ for n, acct in enumerate(picked):
                            "%{customdata[2]}: %{customdata[3]:$,.0f} "
                            "(index %{customdata[4]:.0f})<extra></extra>")))
 
-    value_idx, _ = rebase(d.appraised_value, d.tax_year)
+    value_idx, _ = rebase(d.market_value, d.tax_year)
     if label_lines and value_idx is not None:
         # Selective direct label on the value line only: the account number,
         # linked to the district's parcel page, with the owner beside it.
         # Held until the axis type is known -- see the note below.
-        idx = 100.0 * d.appraised_value / d.appraised_value.iloc[0]
-        label_colour = measure_color["appraised_value"] if SOLO else colour
+        idx = 100.0 * d.market_value / d.market_value.iloc[0]
+        label_colour = measure_color["market_value"] if SOLO else colour
         pending_labels.append((d.tax_year.iloc[-1], idx.iloc[-1], label_colour,
                                f'<a href="{url}" style="color:{label_colour}">{acct}</a> '
                                f'<span style="opacity:.75">'
@@ -240,8 +240,8 @@ st.plotly_chart(fig, width="stretch")
 
 st.caption(
     ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
-    ("Blue solid is appraised value, orange dashed is tax paid. " if SOLO else
-     "Solid is appraised value, dashed is tax paid; color is the "
+    ("Blue solid is market value, orange dashed is tax paid. " if SOLO else
+     "Solid is market value, dashed is tax paid; color is the "
      f"{colour_mode.lower()}. ") +
     "Both are indexed, so the lines show movement, not amounts — tax paid is "
     "the whole levy in dollars, not a rate per $100. Hover for the figures, "
@@ -265,17 +265,17 @@ if focus:
     left, right = st.columns(2)
     with left:
         st.dataframe(
-            detail[["tax_year", "appraised_value", "assessed_value", "total_tax",
-                    "appraised_pct_yoy", "tax_pct_yoy"]],
+            detail[["tax_year", "market_value", "assessed_value", "total_tax",
+                    "market_pct_yoy", "tax_pct_yoy"]],
             width="stretch", hide_index=True, column_config={
                 "tax_year": st.column_config.NumberColumn("Year", format="%d"),
-                "appraised_value": st.column_config.NumberColumn(
-                    "Appraised", format="$%,.0f"),
+                "market_value": st.column_config.NumberColumn(
+                    "Market", format="$%,.0f"),
                 "assessed_value": st.column_config.NumberColumn(
                     "Assessed", format="$%,.0f"),
                 "total_tax": st.column_config.NumberColumn("Tax", format="$%,.2f"),
-                "appraised_pct_yoy": st.column_config.NumberColumn(
-                    "Appraised YoY", format="%+.1f%%"),
+                "market_pct_yoy": st.column_config.NumberColumn(
+                    "Market YoY", format="%+.1f%%"),
                 "tax_pct_yoy": st.column_config.NumberColumn(
                     "Tax YoY", format="%+.1f%%")})
     with right:
@@ -320,10 +320,10 @@ else:
                     name=sector,
                     marker=dict(size=14, color=sector_color.get(sector, t["series"][0])),
                     customdata=grp[["account", "owner_name", "situs_address",
-                                    "appraised_value", "total_tax"]].values,
+                                    "market_value", "total_tax"]].values,
                     hovertemplate=("%{customdata[0]} · %{customdata[1]}<br>"
                                    "%{customdata[2]}<br>"
-                                   "Appraised %{customdata[3]:$,.0f}<br>"
+                                   "Market %{customdata[3]:$,.0f}<br>"
                                    "Tax %{customdata[4]:$,.0f}<extra></extra>")))
         else:
             # Diverging on a neutral midpoint: blue is a cut, red a rise.
@@ -378,8 +378,8 @@ totals = (years.groupby("account")
                years_taxed=("total_tax", "count"))
           .reset_index())
 latest = (years[years.tax_year == latest_year]
-          [["account", "appraised_value", "total_tax"]]
-          .rename(columns={"appraised_value": "appraised_latest",
+          [["account", "market_value", "total_tax"]]
+          .rename(columns={"market_value": "market_latest",
                            "total_tax": "tax_latest"}))
 
 roster = (candidates[candidates.account.isin(picked)]
@@ -387,13 +387,13 @@ roster = (candidates[candidates.account.isin(picked)]
           .merge(latest, on="account", how="left")
           .merge(totals, on="account", how="left")
           [["account", "owner_name", "situs_address", "sector", "use_code",
-            "homestead_shown", "appraised_latest", "tax_latest",
+            "homestead_shown", "market_latest", "tax_latest",
             "tax_all_years", "years_taxed", "link"]])
 money = st.column_config.NumberColumn(format="$%,.0f")
 st.dataframe(roster, width="stretch", hide_index=True, column_config={
     "homestead_shown": st.column_config.CheckboxColumn("Homestead"),
-    "appraised_latest": st.column_config.NumberColumn(
-        f"Appraised {latest_year}", format="$%,.0f"),
+    "market_latest": st.column_config.NumberColumn(
+        f"Market {latest_year}", format="$%,.0f"),
     "tax_latest": st.column_config.NumberColumn(
         f"Tax {latest_year}", format="$%,.2f"),
     "tax_all_years": st.column_config.NumberColumn(
@@ -408,7 +408,7 @@ st.caption(
 if show_table:
     st.subheader("Values by year")
     st.dataframe(
-        years[["account", "tax_year", "appraised_value", "assessed_value",
-               "total_tax", "appraised_pct_yoy", "tax_pct_yoy",
-               "appraised_pct_since_base", "tax_pct_since_base"]],
+        years[["account", "tax_year", "market_value", "assessed_value",
+               "total_tax", "market_pct_yoy", "tax_pct_yoy",
+               "market_pct_since_base", "tax_pct_since_base"]],
         width="stretch", hide_index=True)

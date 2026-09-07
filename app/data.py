@@ -66,7 +66,7 @@ def by_year(selected: tuple[str, ...]) -> pd.DataFrame:
         f"({','.join('?' * len(selected))}) ORDER BY account, tax_year", list(selected)).df()
     # Effective rate is what the owner actually paid per $100 of appraised value,
     # which is not any single published rate.
-    df["effective_rate"] = 100.0 * df["total_tax"] / df["appraised_value"].replace(0, pd.NA)
+    df["effective_rate"] = 100.0 * df["total_tax"] / df["market_value"].replace(0, pd.NA)
     return df
 
 

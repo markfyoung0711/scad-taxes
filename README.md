@@ -10,7 +10,7 @@ district publishes.
 |---|---|---|
 | Advanced search + JSON export (`smithcad-search.gsacorp.io/export/adv/r?format=json`) | Parcel roster: account, GIS parcel id, owner, situs, use code, tax district | current |
 | Parcel detail page (`/parcel/<gis_parcel_id>`) | Building/land/appraised/assessed value **and** taxable value, rate and tax per jurisdiction, per year | 2020–2026 |
-| Certified appraisal roll ZIP (`smithcad.org/data/<year>/`) | Full-county bulk CSV — 144k real property accounts, 9.8k BPP, 41k mineral | current only |
+| Certified appraisal roll ZIP (`smithcad.org/data/<year>/`) | Full-county bulk CSV — 144,373 real property accounts, 9.8k BPP, 41k mineral | current only |
 | County GIS (`Parcels` / `Address_Points` FeatureServers) | Parcel polygons and address points, keyed by the same account numbers | current |
 
 The parcel page is the only public source carrying multiple years, so it is
@@ -18,7 +18,25 @@ what the trend rests on. The bulk roll is the current-year cross-check and the
 route to county-wide coverage.
 
 **Years before the 7 on the parcel page require an open-records request** to
-the district — smithcad.org publishes only the current roll.
+the district — smithcad.org publishes only the current roll, and
+`/data/2025/` returns 404: the year directory is not archived, it is replaced.
+A drafted request is at `docs/public-information-request.md`.
+
+### The three values are not interchangeable
+
+The parcel page's **Total Property Value** is the *market* value. The roll's
+**APPRAISED VAL** is what remains after a special-use (agricultural)
+valuation, and **ASSESSED VALUE** is what remains after exemptions. For an
+ordinary house all three are the same number, which is what makes the
+distinction easy to miss; for an agricultural parcel they are not close —
+account R107192 is market $598,098, special-use $12,240, assessed $53,340.
+
+Validated against the 2026 certified roll on the 103 overlapping accounts:
+102 match on market value, 102 on assessed, 102 on tax. The two exceptions are
+one parcel whose page shows no 2026 levy yet, and one where the page carries a
+later revision than the certified figure — the page labels the current year
+"Preliminary Values", so the roll is the certified number and the page can move
+after it.
 
 ## Pipeline
 

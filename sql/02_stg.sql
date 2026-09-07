@@ -59,7 +59,7 @@ SELECT
     v.tax_year::INTEGER                             AS tax_year,
     TRY_CAST(v.building_value      AS DECIMAL(14,2)) AS building_value,
     TRY_CAST(v.land_value          AS DECIMAL(14,2)) AS land_value,
-    TRY_CAST(v.total_property_value AS DECIMAL(14,2)) AS appraised_value,
+    TRY_CAST(v.total_property_value AS DECIMAL(14,2)) AS market_value,
     TRY_CAST(v.special_use_value   AS DECIMAL(14,2)) AS special_use_value,
     TRY_CAST(v.cap_loss            AS DECIMAL(14,2)) AS cap_loss,
     TRY_CAST(v.net_assessed_value  AS DECIMAL(14,2)) AS assessed_value,

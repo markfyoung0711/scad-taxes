@@ -32,12 +32,12 @@ def homeowners(limit: int | None = None, *, town: str | None = None) -> list[dic
             f"ORDER BY id {f'LIMIT {int(limit)}' if limit else ''}", params).fetchall()
 
         history: dict[str, list] = {}
-        for account, year, appraised, tax in con.execute(
-                "SELECT account, tax_year, appraised_value, total_tax "
+        for account, year, market, tax in con.execute(
+                "SELECT account, tax_year, market_value, total_tax "
                 "FROM mart.fact_parcel_year ORDER BY account, tax_year").fetchall():
             history.setdefault(account, []).append({
                 "year": year,
-                "appraised_value": _num(appraised),
+                "market_value": _num(market),
                 "tax_amount": _num(tax),
             })
     finally:

@@ -24,15 +24,15 @@ WITH base AS (
     SELECT
         account,
         tax_year,
-        appraised_value,
+        market_value,
         assessed_value,
         total_tax,
-        LAG(appraised_value) OVER w AS prev_appraised_value,
+        LAG(market_value) OVER w AS prev_market_value,
         LAG(total_tax)       OVER w AS prev_total_tax,
-        FIRST_VALUE(appraised_value IGNORE NULLS) OVER w AS first_appraised_value,
+        FIRST_VALUE(market_value IGNORE NULLS) OVER w AS first_market_value,
         FIRST_VALUE(total_tax       IGNORE NULLS) OVER w AS first_total_tax,
-        FIRST_VALUE(CASE WHEN appraised_value IS NOT NULL THEN tax_year END
-                    IGNORE NULLS) OVER w AS appraised_base_year,
+        FIRST_VALUE(CASE WHEN market_value IS NOT NULL THEN tax_year END
+                    IGNORE NULLS) OVER w AS market_base_year,
         FIRST_VALUE(CASE WHEN total_tax IS NOT NULL THEN tax_year END
                     IGNORE NULLS) OVER w AS tax_base_year,
         MIN(tax_year) OVER (PARTITION BY account) AS base_year
@@ -43,20 +43,20 @@ SELECT
     account,
     tax_year,
     base_year,
-    appraised_base_year,
+    market_base_year,
     tax_base_year,
-    appraised_value,
+    market_value,
     assessed_value,
     total_tax,
-    appraised_value - prev_appraised_value AS appraised_change_yoy,
-    ROUND(100.0 * (appraised_value - prev_appraised_value)
-          / NULLIF(prev_appraised_value, 0), 2) AS appraised_pct_yoy,
+    market_value - prev_market_value AS market_change_yoy,
+    ROUND(100.0 * (market_value - prev_market_value)
+          / NULLIF(prev_market_value, 0), 2) AS market_pct_yoy,
     total_tax - prev_total_tax AS tax_change_yoy,
     ROUND(100.0 * (total_tax - prev_total_tax)
           / NULLIF(prev_total_tax, 0), 2) AS tax_pct_yoy,
-    appraised_value - first_appraised_value AS appraised_change_since_base,
-    ROUND(100.0 * (appraised_value - first_appraised_value)
-          / NULLIF(first_appraised_value, 0), 2) AS appraised_pct_since_base,
+    market_value - first_market_value AS market_change_since_base,
+    ROUND(100.0 * (market_value - first_market_value)
+          / NULLIF(first_market_value, 0), 2) AS market_pct_since_base,
     total_tax - first_total_tax AS tax_change_since_base,
     ROUND(100.0 * (total_tax - first_total_tax)
           / NULLIF(first_total_tax, 0), 2) AS tax_pct_since_base
@@ -84,20 +84,20 @@ SELECT
     b.first_year,
     b.last_year,
     b.years_observed,
-    f.appraised_value AS first_appraised_value,
-    l.appraised_value AS last_appraised_value,
+    f.market_value AS first_market_value,
+    l.market_value AS last_market_value,
     b.tax_first_year,
     b.tax_last_year,
     tf.total_tax      AS first_total_tax,
     tl.total_tax      AS last_total_tax,
-    ROUND(100.0 * (l.appraised_value - f.appraised_value)
-          / NULLIF(f.appraised_value, 0), 2) AS appraised_pct_total,
+    ROUND(100.0 * (l.market_value - f.market_value)
+          / NULLIF(f.market_value, 0), 2) AS market_pct_total,
     ROUND(100.0 * (tl.total_tax - tf.total_tax)
           / NULLIF(tf.total_tax, 0), 2) AS tax_pct_total,
     -- Compound annual growth over the observed span.
-    ROUND(100.0 * (POWER(l.appraised_value / NULLIF(f.appraised_value, 0),
+    ROUND(100.0 * (POWER(l.market_value / NULLIF(f.market_value, 0),
                          1.0 / NULLIF(b.last_year - b.first_year, 0)) - 1), 2)
-        AS appraised_cagr_pct,
+        AS market_cagr_pct,
     ROUND(100.0 * (POWER(tl.total_tax / NULLIF(tf.total_tax, 0),
                          1.0 / NULLIF(b.tax_last_year - b.tax_first_year, 0)) - 1), 2)
         AS tax_cagr_pct

@@ -15,9 +15,11 @@ from pathlib import Path
 
 import duckdb
 
+from . import bulk
 from .config import SQL, STAGED, WAREHOUSE
 
 LAYERS = ["01_raw.sql", "02_stg.sql", "03_mart.sql"]
+BULK_LAYER = "06_bulk.sql"
 GEO_LAYER = "04_geo.sql"
 EXPORT_LAYER = "05_export.sql"
 
@@ -45,6 +47,9 @@ def build(path: Path = WAREHOUSE) -> Path:
         layers.append(GEO_LAYER)
         layers.append(EXPORT_LAYER)
 
+    bulk_years = sorted(int(d.name) for d in (STAGED / "bulk").glob("*")
+                        if d.is_dir() and d.name.isdigit())
+
     con = duckdb.connect(str(tmp))
     try:
         for name in layers:
@@ -53,6 +58,14 @@ def build(path: Path = WAREHOUSE) -> Path:
             # position, so the globs are substituted before execution.
             con.execute(sql.replace("$staged_glob", f"'{glob}'")
                            .replace("$geocode_glob", f"'{geo_glob}'"))
+
+        # The certified roll is the whole county for one year; the parcel-page
+        # crawl is a handful of parcels across many. They stay separate tables
+        # and are compared, not merged.
+        for year in bulk_years:
+            bulk.load(con, year)
+        if bulk_years:
+            con.execute((SQL / BULK_LAYER).read_text())
     finally:
         con.close()
 
@@ -65,9 +78,11 @@ def counts(path: Path = WAREHOUSE) -> dict[str, int]:
     try:
         tables = ["mart.dim_parcel", "mart.fact_parcel_year",
                   "mart.fact_parcel_jurisdiction_year"]
-        if con.execute("SELECT COUNT(*) FROM duckdb_tables() WHERE schema_name = 'mart' "
-                       "AND table_name = 'dim_parcel_location'").fetchone()[0]:
-            tables.append("mart.dim_parcel_location")
+        for optional in ("dim_parcel_location", "fact_county_parcel_year"):
+            if con.execute("SELECT COUNT(*) FROM duckdb_tables() WHERE "
+                           "schema_name = 'mart' AND table_name = ?",
+                           [optional]).fetchone()[0]:
+                tables.append(f"mart.{optional}")
         return {t: con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
     finally:
         con.close()
