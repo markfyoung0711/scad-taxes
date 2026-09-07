@@ -5,7 +5,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from scad.config import WAREHOUSE
+from scad.config import SEARCH_BASE, WAREHOUSE
 
 
 @st.cache_resource
@@ -16,8 +16,40 @@ def _con() -> duckdb.DuckDBPyConnection:
 @st.cache_data
 def accounts() -> pd.DataFrame:
     return _con().execute(
-        "SELECT account, owner_name, situs_address FROM mart.dim_parcel ORDER BY account"
-    ).df()
+        "SELECT account, owner_name, situs_address, gis_parcel_id, sector, "
+        "use_code, tax_district FROM mart.dim_parcel ORDER BY account").df()
+
+
+@st.cache_data
+def map_points(selected: tuple[str, ...], tax_year: int) -> pd.DataFrame:
+    """One located parcel per row for a single year."""
+    if not _has_locations():
+        return pd.DataFrame()
+    return _con().execute(
+        "SELECT * FROM mart.v_parcel_map WHERE tax_year = ? AND account IN "
+        f"({','.join('?' * len(selected))})", [tax_year, *selected]).df()
+
+
+@st.cache_data
+def _has_locations() -> bool:
+    return bool(_con().execute(
+        "SELECT COUNT(*) FROM duckdb_tables() WHERE schema_name = 'mart' "
+        "AND table_name = 'dim_parcel_location'").fetchone()[0])
+
+
+def has_locations() -> bool:
+    return _has_locations()
+
+
+def parcel_url(gis_parcel_id: str) -> str:
+    """Link back to the district's own detail page for this parcel."""
+    return f"{SEARCH_BASE}/parcel/{gis_parcel_id}"
+
+
+def reload() -> None:
+    """Drop the cached connection and frames so a rebuilt warehouse is seen."""
+    _con.clear()
+    st.cache_data.clear()
 
 
 @st.cache_data

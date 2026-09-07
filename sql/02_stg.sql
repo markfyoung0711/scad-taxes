@@ -12,6 +12,28 @@ SELECT
     parcel.owner_address                    AS owner_address,
     parcel.situs_address                    AS situs_address,
     parcel.use_code                         AS use_code,
+    -- The leading letter of the use code is the Texas state property
+    -- category, so the sector comes out of the code rather than a lookup the
+    -- district would have to publish separately.
+    LEFT(parcel.use_code, 1)                AS use_class,
+    CASE LEFT(parcel.use_code, 1)
+        WHEN 'A' THEN 'Single-family residential'
+        WHEN 'B' THEN 'Multifamily residential'
+        WHEN 'C' THEN 'Vacant lots & tracts'
+        WHEN 'D' THEN 'Qualified agricultural land'
+        WHEN 'E' THEN 'Rural land & improvements'
+        WHEN 'F' THEN 'Commercial & industrial'
+        WHEN 'G' THEN 'Oil, gas & minerals'
+        WHEN 'H' THEN 'Tangible personal property'
+        WHEN 'J' THEN 'Utilities'
+        WHEN 'L' THEN 'Business personal property'
+        WHEN 'M' THEN 'Mobile homes & other tangible'
+        WHEN 'N' THEN 'Intangible personal property'
+        WHEN 'O' THEN 'Residential inventory'
+        WHEN 'S' THEN 'Special inventory'
+        WHEN 'X' THEN 'Exempt'
+        ELSE 'Unclassified'
+    END                                     AS sector,
     parcel.tax_district                     AS tax_district,
     TRY_CAST(parcel.acreage AS DECIMAL(12,4)) AS acreage,
     parcel.subdivision                      AS subdivision,

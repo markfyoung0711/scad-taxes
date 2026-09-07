@@ -1,274 +1,264 @@
-"""Chart gallery: appraised value and taxes over time, one form per section.
+"""Appraised value and taxes over time, indexed to a common base, plus a map.
 
-Every form here answers the same question in a different shape so you can pick
-one. The ordering is a recommendation, not a ranking of effort.
+Value and tax are different units, so they are rebased to 100 in each account's
+first published year. That puts them on one honest axis: the gap between a
+dashed line and its solid partner is how far the tax bill has diverged from the
+appraisal.
+
+Color carries the sector (the Texas state property-use category), not the
+account -- there are more accounts than a categorical palette can hold, and
+sector is what a regional read is actually about.
 """
 from __future__ import annotations
+
+import math
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 import data
 from theme import style, tokens
 
 st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
 
-# ---------------------------------------------------------------- controls
+MEASURES = [("appraised_value", "Appraised value", "solid"),
+            ("total_tax", "Tax paid", "dash")]
+MAX_LABELLED = 8
+CHART_H = 560
+
+
+def short(name: str | None, width: int = 22) -> str:
+    name = (name or "").strip()
+    return name if len(name) <= width else name[:width - 1] + "…"
+
+
+# ------------------------------------------------------------------ controls
 acct_df = data.accounts()
+
 with st.sidebar:
-    st.header("Controls")
-    labels = {
-        r.account: f"{r.account} · {r.situs_address or '(no situs)'}"
-        for r in acct_df.itertuples()
-    }
+    st.header("Filters")
+    sectors = sorted(acct_df.sector.dropna().unique())
+    picked_sectors = st.multiselect("Sector", sectors, default=sectors)
+
+    in_sector = acct_df[acct_df.sector.isin(picked_sectors)]
+    uses = sorted(in_sector.use_code.dropna().unique())
+    picked_uses = st.multiselect("Use code", uses, default=uses,
+                                 help="Narrows within the chosen sectors.")
+
+    candidates = in_sector[in_sector.use_code.isin(picked_uses)]
+    labels = {r.account: f"{r.account} · {short(r.owner_name, 26)}"
+              for r in candidates.itertuples()}
     picked = st.multiselect("Accounts", list(labels), default=list(labels),
                             format_func=lambda a: labels[a])
+
+    st.header("Display")
     mode = st.radio("Theme", ["light", "dark"], horizontal=True)
-    show_tables = st.toggle("Show data tables", value=False,
-                            help="Aqua and yellow fall below 3:1 on the light "
-                                 "surface; the table is the relief.")
+    label_lines = st.toggle("Label lines on the chart",
+                            value=len(picked) <= MAX_LABELLED)
+    y_scale = st.radio(
+        "Y scale", ["Auto", "Linear", "Log"], horizontal=True,
+        help="A parcel that was split or newly improved can index into the "
+             "hundreds, flattening everything else on a linear axis. Auto "
+             "switches to log once the spread passes 5x.")
+    show_table = st.toggle("Show data table", value=False)
+    if st.button("Reload warehouse", help="Pick up a rebuild without restarting"):
+        data.reload()
+        st.rerun()
 
 if not picked:
-    st.info("Pick at least one account.")
+    st.info("No accounts match these filters.")
     st.stop()
 
 t = tokens(mode)
 years = data.by_year(tuple(picked))
-juris = data.by_jurisdiction(tuple(picked))
-focus = picked[0]
-color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(picked)}
+meta = acct_df.set_index("account")
+
+# One hue per sector, assigned in a fixed order over every sector in the
+# warehouse -- so filtering the list never repaints the sectors that remain.
+sector_color = {s: t["series"][i % len(t["series"])]
+                for i, s in enumerate(sorted(acct_df.sector.dropna().unique()))}
 
 st.title("Appraised value & taxes over time")
 st.caption(
     f"{len(picked)} account(s) · {int(years.tax_year.min())}–{int(years.tax_year.max())} · "
-    "rates are published per $100 of value"
+    "each series rebased to 100 in its own first published year"
 )
 
-
-def section(n: int, title: str, best_for: str, note: str | None = None):
-    st.divider()
-    st.subheader(f"{n}. {title}")
-    st.caption(f"**Best for:** {best_for}")
-    if note:
-        st.caption(note)
-
-
-def table(df: pd.DataFrame):
-    if show_tables:
-        st.dataframe(df, width="stretch", hide_index=True)
-
-
-def label_last(fig, x, y, text, colour, row=None, col=None):
-    """Selective direct label: the last point only, never every point."""
-    fig.add_annotation(x=x, y=y, text=text, showarrow=False, xanchor="left",
-                       xshift=6, font=dict(color=colour, size=11),
-                       row=row, col=col)
-
-
-# ------------------------------------------------- 1. small multiples
-section(1, "Small multiples", "maximum clarity — no scale confusion at all",
-        "Three panels on one time axis. Recommended: appraised value, tax paid "
-        "and effective rate are three different units, so they get three axes "
-        "stacked rather than two crammed onto one plot.")
-
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.07,
-                    subplot_titles=("Appraised value", "Total tax",
-                                    "Effective rate (tax per $100 appraised)"))
-for acct in picked:
-    d = years[years.account == acct]
-    for row, (col_name, fmt) in enumerate(
-            [("appraised_value", "${:,.0f}"), ("total_tax", "${:,.0f}"),
-             ("effective_rate", "{:.3f}")], start=1):
-        fig.add_trace(go.Scatter(
-            x=d.tax_year, y=d[col_name], name=acct, legendgroup=acct,
-            showlegend=(row == 1 and len(picked) > 1),
-            mode="lines+markers", line=dict(color=color[acct], width=2),
-            marker=dict(size=8)), row=row, col=1)
-        last = d.iloc[-1]
-        label_last(fig, last.tax_year, last[col_name],
-                   fmt.format(last[col_name]), color[acct], row=row, col=1)
-style(fig, t, height=680, legend=len(picked) > 1)
-fig.update_annotations(font=dict(color=t["text_secondary"], size=12))
-st.plotly_chart(fig, width="stretch")
-table(years[["account", "tax_year", "appraised_value", "assessed_value",
-             "total_tax", "effective_rate"]])
-
-# ------------------------------------------------- 2. indexed to a common base
-section(2, "Indexed to a common base", "seeing which grew faster, on one honest axis",
-        "Both measures rebased to 100 in each account's first year. This is the "
-        "correct way to put two different scales on a single axis — the gap "
-        "between the lines is the divergence you actually want to read.")
-
+# ------------------------------------------------------------------- chart
 fig = go.Figure()
-for i, acct in enumerate(picked):
-    d = years[years.account == acct].copy()
-    for j, (col_name, nice) in enumerate([("appraised_value", "Appraised value"),
-                                          ("total_tax", "Tax paid")]):
-        idx = 100.0 * d[col_name] / d[col_name].iloc[0]
+seen_sectors: set[str] = set()
+pending_labels: list[tuple] = []
+
+for acct in picked:
+    d = years[years.account == acct].sort_values("tax_year")
+    if d.empty:
+        continue
+    row = meta.loc[acct]
+    sector = row.sector or "Unclassified"
+    colour = sector_color.get(sector, t["series"][0])
+    url = data.parcel_url(row.gis_parcel_id)
+    who = f"{acct} · {short(row.owner_name, 30)}"
+
+    for col_name, nice, dash in MEASURES:
+        base = d[col_name].iloc[0]
+        if not base:
+            continue
+        idx = 100.0 * d[col_name] / base
+        first = sector not in seen_sectors and dash == "solid"
+        seen_sectors.add(sector) if dash == "solid" else None
         fig.add_trace(go.Scatter(
             x=d.tax_year, y=idx, mode="lines+markers",
-            name=f"{nice}" + (f" · {acct}" if len(picked) > 1 else ""),
-            line=dict(color=t["series"][j], width=2,
-                      dash="solid" if i == 0 else "dash"),
-            marker=dict(size=8)))
-        label_last(fig, d.tax_year.iloc[-1], idx.iloc[-1], f"{idx.iloc[-1]:.0f}",
-                   t["series"][j])
+            name=sector, legendgroup=sector, showlegend=first,
+            line=dict(color=colour, width=2, dash=dash),
+            marker=dict(size=7),
+            customdata=[[who, row.situs_address or "", nice, v, iv]
+                        for v, iv in zip(d[col_name], idx)],
+            hovertemplate=("%{customdata[0]}<br>%{customdata[1]}<br>"
+                           "%{customdata[2]}: %{customdata[3]:$,.0f} "
+                           "(index %{customdata[4]:.0f})<extra></extra>")))
+
+    if label_lines and d.appraised_value.iloc[0]:
+        # Selective direct label on the value line only: the account number,
+        # linked to the district's parcel page, with the owner beside it.
+        # Held until the axis type is known -- see the note below.
+        idx = 100.0 * d.appraised_value / d.appraised_value.iloc[0]
+        pending_labels.append((d.tax_year.iloc[-1], idx.iloc[-1], colour,
+                               f'<a href="{url}" style="color:{colour}">{acct}</a> '
+                               f'<span style="opacity:.75">'
+                               f'{short(row.owner_name, 20)}</span>'))
+
+# A split or a new build can index into the hundreds while everything else
+# sits near 100; on a linear axis that one line flattens the rest. Default to
+# log once the spread passes 5x, and let the sidebar override either way.
+spread = max((tr.y.max() / max(tr.y.min(), 1e-9)) for tr in fig.data if len(tr.y))
+use_log = spread > 5 if y_scale == "Auto" else y_scale == "Log"
+fig.update_yaxes(title_text="Index (first year = 100)",
+                 type="log" if use_log else "linear")
+
+# Plotly places shapes and annotations in axis coordinates, and a log axis
+# counts those in powers of ten -- so anything positioned by value has to be
+# converted once the axis type is settled, not before.
+def at_y(value: float) -> float:
+    return math.log10(max(value, 1e-9)) if use_log else value
+
+
+# add_hline takes the raw data value and converts for the axis itself.
 fig.add_hline(y=100, line=dict(color=t["grid"], width=1))
-fig.update_yaxes(title_text="Index (first year = 100)")
-style(fig, t, height=420)
+
+# End-point labels cluster wherever lines converge, so nudge them apart in
+# pixel space: place them in y order and keep a minimum gap, shifting only as
+# far as the collision requires.
+PLOT_H, GAP = CHART_H - 40, 18
+if pending_labels:
+    ordered = sorted(pending_labels, key=lambda r: r[1], reverse=True)
+    ys = [at_y(y) for _, y, _, _ in ordered]
+    lo, hi = min(ys), max(ys)
+    span = (hi - lo) or 1.0
+    placed: float | None = None
+    for (x, y, colour, text), pos in zip(ordered, ys):
+        px = (hi - pos) / span * PLOT_H          # 0 at the top of the cluster
+        if placed is not None and px - placed < GAP:
+            px = placed + GAP
+        placed = px
+        fig.add_annotation(x=x, y=pos, text=text, showarrow=False,
+                           xanchor="left", xshift=10,
+                           yshift=int(round((hi - pos) / span * PLOT_H - px)),
+                           align="left", font=dict(color=colour, size=11))
+style(fig, t, height=CHART_H,
+      margin=dict(l=8, r=250 if label_lines else 44, t=32, b=8))
+# Labels sit in the right margin; without an explicit range their width drags
+# the axis out to a year that has no data.
+fig.update_xaxes(range=[years.tax_year.min() - 0.25, years.tax_year.max() + 0.25],
+                 tickmode="array",
+                 tickvals=sorted(int(y) for y in years.tax_year.unique()))
 st.plotly_chart(fig, width="stretch")
 
-# ------------------------------------------------- 3. area + line
-section(3, "Area + line (indexed)", "value as the story, tax as the counterpoint",
-        "Filled area carries the magnitude of the value change; the line rides "
-        "on top. Indexed so both share one axis.")
+st.caption(
+    ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
+    "Solid is appraised value, dashed is tax paid; color is the sector. "
+    "Account numbers at the right link to the district's parcel page. "
+    "A dashed line above its solid partner means the bill outran the "
+    "appraisal — rates and exemptions moving, not the market."
+)
 
-d = years[years.account == focus].copy()
-v_idx = 100.0 * d.appraised_value / d.appraised_value.iloc[0]
-t_idx = 100.0 * d.total_tax / d.total_tax.iloc[0]
-fill = "rgba(42,120,214,0.18)" if mode == "light" else "rgba(57,135,229,0.22)"
-fig = go.Figure()
-# Fill between the value line and the index baseline, so the shaded band reads
-# as "how far above/below its starting point" rather than a slab up from zero.
-fig.add_trace(go.Scatter(x=d.tax_year, y=[100] * len(d), mode="lines",
-                         line=dict(color=t["grid"], width=1),
-                         hoverinfo="skip", showlegend=False))
-fig.add_trace(go.Scatter(x=d.tax_year, y=v_idx, name="Appraised value", fill="tonexty",
-                         mode="lines", line=dict(color=t["series"][0], width=2),
-                         fillcolor=fill))
-fig.add_trace(go.Scatter(x=d.tax_year, y=t_idx, name="Tax paid", mode="lines+markers",
-                         line=dict(color=t["series"][1], width=2), marker=dict(size=8)))
-label_last(fig, d.tax_year.iloc[-1], v_idx.iloc[-1], f"{v_idx.iloc[-1]:.0f}", t["series"][0])
-label_last(fig, d.tax_year.iloc[-1], t_idx.iloc[-1], f"{t_idx.iloc[-1]:.0f}", t["series"][1])
-fig.update_yaxes(title_text="Index (first year = 100)")
-style(fig, t, height=400)
-st.plotly_chart(fig, width="stretch")
-st.caption(f"Showing {focus}. Pick a different first account in the sidebar to change it.")
+# --------------------------------------------------------------------- map
+st.divider()
+st.subheader("Regional view")
 
-# ------------------------------------------------- 4. waterfall
-section(4, "Waterfall — year-over-year change", "how much moved each year, and which way",
-        "Absolute levels drop out; only the deltas remain. Reads volatility "
-        "faster than any line chart.")
+if not data.has_locations():
+    st.info("No geocoding staged yet. Run `scad geocode && scad build`.")
+else:
+    year_options = sorted(int(y) for y in years.tax_year.unique())
+    map_year = st.select_slider("Tax year", year_options, value=year_options[-1])
+    points = data.map_points(tuple(picked), map_year)
 
-metric = st.radio("Measure", ["Appraised value", "Total tax"], horizontal=True,
-                  key="waterfall_metric")
-col_name = "appraised_value" if metric == "Appraised value" else "total_tax"
-d = years[years.account == focus]
-fig = go.Figure(go.Waterfall(
-    orientation="v",
-    measure=["absolute"] + ["relative"] * (len(d) - 1),
-    x=[str(y) for y in d.tax_year],
-    y=[d[col_name].iloc[0]] + list(d[col_name].diff().dropna()),
-    increasing=dict(marker=dict(color=t["neg"])),   # a rising bill is the bad direction
-    decreasing=dict(marker=dict(color=t["pos"])),
-    totals=dict(marker=dict(color=t["text_secondary"])),
-    connector=dict(line=dict(color=t["grid"], width=1)),
-    text=[f"${v:,.0f}" for v in [d[col_name].iloc[0]] + list(d[col_name].diff().dropna())],
-    textposition="outside", textfont=dict(color=t["text_secondary"], size=11)))
-style(fig, t, height=420, legend=False)
-fig.update_layout(hovermode="x")
-st.plotly_chart(fig, width="stretch")
-st.caption(f"Showing {focus} · {metric.lower()}. Red is an increase, blue a decrease; the grey opening bar is the baseline year's level, not a change.")
+    if points.empty:
+        st.info(f"No located parcels for {map_year}.")
+    else:
+        colour_by = st.radio("Color by", ["Sector", "Tax change since base"],
+                             horizontal=True)
+        fig = go.Figure()
+        if colour_by == "Sector":
+            for sector, grp in points.groupby("sector"):
+                fig.add_trace(go.Scattermap(
+                    lat=grp.latitude, lon=grp.longitude, mode="markers",
+                    name=sector,
+                    marker=dict(size=14, color=sector_color.get(sector, t["series"][0])),
+                    customdata=grp[["account", "owner_name", "situs_address",
+                                    "appraised_value", "total_tax"]].values,
+                    hovertemplate=("%{customdata[0]} · %{customdata[1]}<br>"
+                                   "%{customdata[2]}<br>"
+                                   "Appraised %{customdata[3]:$,.0f}<br>"
+                                   "Tax %{customdata[4]:$,.0f}<extra></extra>")))
+        else:
+            # Diverging on a neutral midpoint: blue is a cut, red a rise.
+            pct = points.tax_pct_since_base.fillna(0)
+            limit = float(pct.abs().max() or 1)
+            fig.add_trace(go.Scattermap(
+                lat=points.latitude, lon=points.longitude, mode="markers",
+                marker=dict(size=15, color=pct, cmin=-limit, cmax=limit,
+                            colorscale=[[0.0, t["pos"]], [0.5, t["mid"]],
+                                        [1.0, t["neg"]]],
+                            colorbar=dict(title="Tax %<br>vs base",
+                                          tickfont=dict(color=t["text_secondary"]))),
+                customdata=points[["account", "owner_name", "situs_address",
+                                   "total_tax", "tax_pct_since_base"]].values,
+                hovertemplate=("%{customdata[0]} · %{customdata[1]}<br>"
+                               "%{customdata[2]}<br>"
+                               "Tax %{customdata[3]:$,.0f} "
+                               "(%{customdata[4]:+.0f}% vs base)<extra></extra>")))
 
-# ------------------------------------------------- 5. slope
-section(5, "Slope chart — first year vs last", "the whole span as one comparison",
-        "Two points per account. Strips out every intermediate year to answer "
-        "'where did this end up?'")
+        fig.update_layout(
+            map=dict(style="carto-darkmatter" if mode == "dark" else "carto-positron",
+                     center=dict(lat=points.latitude.mean(),
+                                 lon=points.longitude.mean()),
+                     zoom=8.5),
+            height=560, margin=dict(l=0, r=0, t=0, b=0),
+            paper_bgcolor=t["surface"], font=dict(color=t["text_primary"]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0,
+                        font=dict(color=t["text_secondary"])))
+        st.plotly_chart(fig, width="stretch")
+        st.caption(
+            "Located against Smith County's own parcel polygons where one "
+            "exists, and the county address-point layer otherwise — "
+            "improvement-only accounts and recent splits have no polygon of "
+            "their own.")
 
-fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.16,
-                    subplot_titles=("Appraised value", "Total tax"))
-for acct in picked:
-    d = years[years.account == acct]
-    for c, col_name in enumerate(["appraised_value", "total_tax"], start=1):
-        first, last = d.iloc[0], d.iloc[-1]
-        pct = 100.0 * (last[col_name] - first[col_name]) / first[col_name]
-        fig.add_trace(go.Scatter(
-            x=[int(first.tax_year), int(last.tax_year)],
-            y=[first[col_name], last[col_name]],
-            mode="lines+markers", name=acct, legendgroup=acct,
-            showlegend=(c == 1 and len(picked) > 1),
-            line=dict(color=color[acct], width=2), marker=dict(size=10)), row=1, col=c)
-        # Annotations, not trace text: trace text is clipped at the plot edge,
-        # annotations render into the margin where these labels need to sit.
-        for x, y, txt, anchor, shift in [
-                (first.tax_year, first[col_name], f"${first[col_name]:,.0f}", "right", -10),
-                (last.tax_year, last[col_name], f"${last[col_name]:,.0f} ({pct:+.0f}%)", "left", 10)]:
-            fig.add_annotation(x=int(x), y=y, text=txt, showarrow=False,
-                               xanchor=anchor, xshift=shift,
-                               font=dict(color=t["text_secondary"], size=11),
-                               row=1, col=c)
-first_year, last_year = int(years.tax_year.min()), int(years.tax_year.max())
-style(fig, t, height=400, legend=len(picked) > 1,
-      margin=dict(l=100, r=150, t=48, b=8))
-# A slope chart labels its own end points, so the value axis is scaffolding.
-fig.update_yaxes(showticklabels=False, showgrid=False)
-fig.update_xaxes(tickmode="array", tickvals=[first_year, last_year],
-                 range=[first_year - 0.08 * (last_year - first_year),
-                        last_year + 0.08 * (last_year - first_year)])
-fig.update_annotations(font=dict(color=t["text_secondary"], size=12))
-st.plotly_chart(fig, width="stretch")
+# ------------------------------------------------------------------ roster
+st.divider()
+st.subheader("Parcels")
+roster = (candidates[candidates.account.isin(picked)]
+          .assign(link=lambda df: df.gis_parcel_id.map(data.parcel_url))
+          [["account", "owner_name", "situs_address", "sector", "use_code", "link"]])
+st.dataframe(roster, width="stretch", hide_index=True,
+             column_config={"link": st.column_config.LinkColumn(
+                 "Detail", display_text="parcel page")})
 
-# ------------------------------------------------- 6. stacked bar
-section(6, "Stacked bar — tax by jurisdiction", "who is actually charging you",
-        "Stacking is legitimate here: the jurisdiction taxes are parts of one "
-        "whole — they sum to the year's bill.")
-
-d = juris[juris.account == focus]
-fig = go.Figure()
-for i, name in enumerate(sorted(d.jurisdiction.unique())):
-    j = d[d.jurisdiction == name].sort_values("tax_year")
-    fig.add_trace(go.Bar(x=j.tax_year, y=j.tax_amount, name=name,
-                         marker=dict(color=t["series"][i],
-                                     line=dict(color=t["surface"], width=2))))
-fig.update_layout(barmode="stack", bargap=0.35)
-fig.update_yaxes(title_text="Tax ($)")
-style(fig, t, height=420)
-fig.update_layout(hovermode="x unified")
-st.plotly_chart(fig, width="stretch")
-st.caption(f"Showing {focus}. The 2px surface gap between segments is deliberate.")
-table(d[["tax_year", "jurisdiction", "taxable_value", "tax_rate", "tax_amount"]])
-
-# ------------------------------------------------- 7. heatmap
-section(7, "Heatmap — YoY change by jurisdiction", "spotting which year and which taxing unit moved",
-        "Diverging blue↔red on a neutral midpoint: blue is a cut, red a rise, "
-        "gray is no change.")
-
-d = juris[(juris.account == focus) & juris.tax_change_yoy.notna()]
-pivot = d.pivot_table(index="jurisdiction", columns="tax_year",
-                      values="tax_change_yoy", aggfunc="mean")
-limit = float(pivot.abs().max().max() or 1)
-fig = go.Figure(go.Heatmap(
-    z=pivot.values, x=[str(c) for c in pivot.columns], y=list(pivot.index),
-    colorscale=[[0.0, t["pos"]], [0.5, t["mid"]], [1.0, t["neg"]]],
-    zmid=0, zmin=-limit, zmax=limit,
-    xgap=2, ygap=2,
-    colorbar=dict(title="Δ tax ($)", tickfont=dict(color=t["text_secondary"])),
-    hovertemplate="%{y} · %{x}<br>%{z:$,.2f}<extra></extra>"))
-style(fig, t, height=320, legend=False)
-fig.update_layout(hovermode="closest")
-st.plotly_chart(fig, width="stretch")
-st.caption(f"Showing {focus}. The baseline year has no prior year, so it is not plotted.")
-
-# ------------------------------------------------- 8. dual axis
-section(8, "Dual axis — shown so you can rule it out", "nothing, really",
-        "You asked for this one, so here it is. The two y-scales are chosen by "
-        "the renderer, and moving either one changes where the lines appear to "
-        "cross — so any 'correlation' you read off it is an artefact of the "
-        "scaling, not the data. Chart 2 answers the same question honestly.")
-
-d = years[years.account == focus]
-fig = make_subplots(specs=[[{"secondary_y": True}]])
-fig.add_trace(go.Scatter(x=d.tax_year, y=d.appraised_value, name="Appraised value",
-                         mode="lines+markers", line=dict(color=t["series"][0], width=2),
-                         marker=dict(size=8)), secondary_y=False)
-fig.add_trace(go.Scatter(x=d.tax_year, y=d.effective_rate, name="Effective rate",
-                         mode="lines+markers", line=dict(color=t["series"][1], width=2),
-                         marker=dict(size=8)), secondary_y=True)
-fig.update_yaxes(title_text="Appraised value ($)", secondary_y=False,
-                 gridcolor=t["grid"], tickfont=dict(color=t["text_secondary"]))
-fig.update_yaxes(title_text="Effective rate (per $100)", secondary_y=True,
-                 showgrid=False, tickfont=dict(color=t["text_secondary"]))
-style(fig, t, height=400)
-st.plotly_chart(fig, width="stretch")
+if show_table:
+    st.subheader("Values by year")
+    st.dataframe(
+        years[["account", "tax_year", "appraised_value", "assessed_value",
+               "total_tax", "appraised_pct_yoy", "tax_pct_yoy",
+               "appraised_pct_since_base", "tax_pct_since_base"]],
+        width="stretch", hide_index=True)
