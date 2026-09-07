@@ -60,9 +60,14 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
     matrix.columns = [str(int(c)) for c in matrix.columns]
     year_cols = list(matrix.columns)
 
+    # One owner often holds several parcels, so the name alone does not
+    # identify a row; the district's use code is what tells them apart, and it
+    # earns its own column so rows can be grouped by it.
+    info = meta.reindex(matrix.index)
     summary = (trend.set_index("account")
                .reindex(matrix.index)
-               .assign(owner=lambda df: meta.reindex(df.index).owner_name))
+               .assign(owner=info.owner_name,
+                       use=info.use_code.fillna("").str.split(":").str[0].str.strip()))
     # Dollar movement alongside the percentage: a bill going $77 -> $14,269
     # and one going $4,000 -> $4,800 are not the same event, and neither
     # measure describes both.
@@ -75,6 +80,7 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
 
     table = (dollars if cells == "$ change" else matrix).copy()
     table.insert(0, "Owner", summary.owner)
+    table.insert(1, "Use", summary.use)
     # Mean of yearly percentages overstates a volatile series; the compound
     # rate is what actually happened, so it is the one to sort on.
     table["Avg YoY"] = matrix.mean(axis=1, skipna=True)
@@ -113,9 +119,14 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
                        "Biggest $ jump": "${:+,.0f}",
                        "Tax, all years": "${:,.0f}"}, na_rep="—"))
 
-    picked = st.dataframe(styled, width="stretch",
-                          on_select="rerun", selection_mode="single-row",
-                          key="summary_table")
+    picked = st.dataframe(
+        styled, width="stretch", on_select="rerun",
+        selection_mode="single-row", key="summary_table",
+        column_config={"Use": st.column_config.TextColumn(
+            "Use", width="small",
+            help="The district's property use code — A is single-family, D "
+                 "qualified agricultural, E rural land. One owner can hold "
+                 "several parcels under different codes.")})
     st.caption(
         f"Each cell is that year's change against the one before, shaded green "
         f"to {green:g}%, yellow to {yellow:g}%, red above — the shading always "
