@@ -199,3 +199,23 @@ since the baseline year, and needs `scad geocode && scad build` first.
 Colors come from a validated categorical palette (adjacent-pair CVD ΔE ≥ 8 in
 both light and dark). Aqua and yellow sit below 3:1 on the light surface, so
 every view also offers the table.
+
+## Deployment
+
+Cloud Run behind a global HTTPS load balancer with IAP, in GCP project
+`butterfly-buckstoplabs`, served at `butterfly.buckstoplabs.com`.
+
+```bash
+gcloud run deploy butterfly --source . --project=butterfly-buckstoplabs \
+  --region=us-central1 --ingress=internal-and-cloud-load-balancing \
+  --no-allow-unauthenticated
+```
+
+The warehouse is baked into the image — 3 MB, and it only changes when the
+pipeline re-runs — so there is no bucket to mount and no credentials at
+runtime. Refreshing the site means rebuilding: `scad fetch … && scad geocode &&
+scad build`, then redeploy.
+
+`.gcloudignore` exists because gcloud otherwise falls back to `.gitignore`,
+which excludes all of `data/` and would strip the warehouse out of the build
+context.

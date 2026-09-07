@@ -15,10 +15,15 @@ def _con() -> duckdb.DuckDBPyConnection:
 
 @st.cache_data
 def accounts() -> pd.DataFrame:
+    # Town comes from the county's GIS, since the parcel page's situs line
+    # carries the street but not the city.
     return _con().execute(
-        "SELECT account, owner_name, situs_address, gis_parcel_id, sector, "
-        "use_code, homestead_shown, tax_district FROM mart.dim_parcel "
-        "ORDER BY account").df()
+        "SELECT p.account, p.owner_name, p.situs_address, p.gis_parcel_id, "
+        "p.sector, p.use_code, p.homestead_shown, p.tax_district, "
+        "COALESCE(l.gis_city, '(unknown)') AS town "
+        "FROM mart.dim_parcel p "
+        "LEFT JOIN mart.dim_parcel_location l USING (gis_parcel_id) "
+        "ORDER BY p.account").df()
 
 
 @st.cache_data

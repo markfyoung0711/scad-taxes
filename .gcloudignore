@@ -1,0 +1,11 @@
+# Without this file gcloud falls back to .gitignore, which excludes all of
+# data/ — and the warehouse has to reach the build context to be baked into
+# the image. Everything else under data/ is raw acquisition output.
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.pyc
+data/raw/
+data/staged/
+data/export/

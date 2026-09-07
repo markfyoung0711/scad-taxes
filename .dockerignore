@@ -1,0 +1,10 @@
+.git/
+.venv/
+__pycache__/
+*.pyc
+
+# The warehouse is deliberately copied in; everything else under data/ is raw
+# acquisition output and does not belong in the image.
+data/raw/
+data/staged/
+data/export/

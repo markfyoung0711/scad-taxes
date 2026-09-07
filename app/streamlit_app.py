@@ -59,10 +59,14 @@ acct_df = data.accounts()
 
 with st.sidebar:
     st.header("Filters")
-    sectors = sorted(acct_df.sector.dropna().unique())
+    towns = sorted(acct_df.town.dropna().unique())
+    picked_towns = st.multiselect("Town", towns, default=towns)
+
+    in_town = acct_df[acct_df.town.isin(picked_towns)]
+    sectors = sorted(in_town.sector.dropna().unique())
     picked_sectors = st.multiselect("Sector", sectors, default=sectors)
 
-    in_sector = acct_df[acct_df.sector.isin(picked_sectors)]
+    in_sector = in_town[in_town.sector.isin(picked_sectors)]
     uses = sorted(in_sector.use_code.dropna().unique())
     picked_uses = st.multiselect("Use code", uses, default=uses,
                                  help="Narrows within the chosen sectors.")
