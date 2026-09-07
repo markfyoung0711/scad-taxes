@@ -26,12 +26,29 @@ st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
 MEASURES = [("appraised_value", "Appraised value", "solid"),
             ("total_tax", "Tax paid", "dash")]
 MAX_LABELLED = 8
+MAX_SERIES = 8
 CHART_H = 560
 
 
 def short(name: str | None, width: int = 22) -> str:
     name = (name or "").strip()
     return name if len(name) <= width else name[:width - 1] + "…"
+
+
+def rebase(values: pd.Series, tax_years: pd.Series):
+    """Index to 100 at the first year the measure actually has a figure.
+
+    A parcel's first published year is not always its first *taxed* year -- a
+    new build or a split appears on the roll with an appraisal before any levy
+    is calculated. Indexing off the parcel's first year would divide by a
+    missing number and silently drop the whole series, so each measure is
+    rebased on its own first real value and the offset is reported.
+    """
+    usable = values.notna() & (values != 0)
+    if not usable.any():
+        return None, None
+    base = values[usable].iloc[0]
+    return 100.0 * values / base, int(tax_years[usable].iloc[0])
 
 
 # ------------------------------------------------------------------ controls
@@ -54,12 +71,15 @@ with st.sidebar:
                             format_func=lambda a: labels[a])
 
     st.header("Display")
+    # A categorical palette holds eight hues and they are never cycled, so
+    # colouring by account stops being offered past that.
+    colour_choices = (["Account", "Sector"] if len(picked) <= MAX_SERIES
+                      else ["Sector"])
     colour_mode = st.radio(
-        "Color by", ["Measure", "Sector"],
-        index=0 if len(picked) <= 2 else 1, horizontal=True,
-        help="Measure reads one or two accounts closely — value against tax. "
-             "Sector reads many at once, where there are more accounts than a "
-             "categorical palette can hold.")
+        "Color by", colour_choices, horizontal=True,
+        help="Account gives each parcel its own hue, with solid for appraised "
+             "value and dashed for tax paid. Sector groups them once there "
+             "are more parcels than a palette can hold.")
     mode = st.radio("Theme", ["light", "dark"], horizontal=True)
     label_lines = st.toggle("Label lines on the chart",
                             value=len(picked) <= MAX_LABELLED)
@@ -88,8 +108,12 @@ sector_color = {s: t["series"][i % len(t["series"])]
 # Colouring by measure puts appraised value against tax paid for one account;
 # the account is then carried by the dash pattern instead.
 measure_color = {"appraised_value": t["series"][0], "total_tax": t["series"][1]}
-BY_MEASURE = colour_mode == "Measure"
-DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
+account_color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(picked)}
+
+# With one parcel there is no identity to encode, so colour is free to carry
+# the measure -- that is the close read, value against tax. With more than one,
+# colour belongs to the parcel and the dash tells the two measures apart.
+SOLO = len(picked) == 1
 
 st.title("Appraised value & taxes over time")
 st.caption(
@@ -101,6 +125,7 @@ st.caption(
 fig = go.Figure()
 seen_sectors: set[str] = set()
 pending_labels: list[tuple] = []
+coverage: list[tuple] = []   # (account, label, measure, first year with data)
 
 for n, acct in enumerate(picked):
     d = years[years.account == acct].sort_values("tax_year")
@@ -112,21 +137,23 @@ for n, acct in enumerate(picked):
     who = f"{acct} · {short(row.owner_name, 30)}"
 
     for col_name, nice, sector_dash in MEASURES:
-        base = d[col_name].iloc[0]
-        if not base:
+        idx, base_year = rebase(d[col_name], d.tax_year)
+        if idx is None:
+            coverage.append((acct, who, nice, None))
             continue
-        idx = 100.0 * d[col_name] / base
+        if base_year != int(d.tax_year.iloc[0]):
+            coverage.append((acct, who, nice, base_year))
 
-        if BY_MEASURE:
-            colour = measure_color[col_name]
-            dash = DASHES[n % len(DASHES)]
-            key = f"{nice}|{acct}" if len(picked) > 1 else nice
-            legend_name = f"{nice} · {acct}" if len(picked) > 1 else nice
-            first = key not in seen_sectors
-            seen_sectors.add(key)
+        dash = sector_dash  # solid for appraised value, dashed for tax paid
+        if SOLO:
+            colour, legend_name, dash = measure_color[col_name], nice, "solid"
+            first = True
+        elif colour_mode == "Account":
+            colour = account_color[acct]
+            legend_name = f"{acct} · {short(row.owner_name, 24)}"
+            first = sector_dash == "solid"
         else:
             colour = sector_color.get(sector, t["series"][0])
-            dash = sector_dash
             legend_name = sector
             first = sector not in seen_sectors and sector_dash == "solid"
             if sector_dash == "solid":
@@ -143,12 +170,13 @@ for n, acct in enumerate(picked):
                            "%{customdata[2]}: %{customdata[3]:$,.0f} "
                            "(index %{customdata[4]:.0f})<extra></extra>")))
 
-    if label_lines and d.appraised_value.iloc[0]:
+    value_idx, _ = rebase(d.appraised_value, d.tax_year)
+    if label_lines and value_idx is not None:
         # Selective direct label on the value line only: the account number,
         # linked to the district's parcel page, with the owner beside it.
         # Held until the axis type is known -- see the note below.
         idx = 100.0 * d.appraised_value / d.appraised_value.iloc[0]
-        label_colour = measure_color["appraised_value"] if BY_MEASURE else colour
+        label_colour = measure_color["appraised_value"] if SOLO else colour
         pending_labels.append((d.tax_year.iloc[-1], idx.iloc[-1], label_colour,
                                f'<a href="{url}" style="color:{label_colour}">{acct}</a> '
                                f'<span style="opacity:.75">'
@@ -207,13 +235,29 @@ st.plotly_chart(fig, width="stretch")
 
 st.caption(
     ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
-    ("Blue is appraised value, orange is tax paid; the dash pattern is the "
-     "account. " if BY_MEASURE else
-     "Solid is appraised value, dashed is tax paid; color is the sector. ") +
+    ("Blue is appraised value, orange is tax paid. " if SOLO else
+     "Solid is appraised value, dashed is tax paid; color is the "
+     f"{colour_mode.lower()}. ") +
     "Account numbers at the right link to the district's parcel page. "
     "A dashed line above its solid partner means the bill outran the "
     "appraisal — rates and exemptions moving, not the market."
 )
+
+if coverage:
+    lines = []
+    for acct, who, measure, first in sorted(set(coverage)):
+        if first is None:
+            lines.append(f"- **{who}** — no {measure.lower()} on record at all; "
+                         f"that series is absent from the chart.")
+        else:
+            lines.append(f"- **{who}** — {measure.lower()} starts in {first}, "
+                         f"after its first appraised year, so it is indexed to "
+                         f"100 at {first} rather than at the parcel's base year.")
+    st.warning("**Incomplete tax history**\n\n" + "\n".join(lines) +
+               "\n\nA parcel can carry an appraisal before any levy is "
+               "calculated — a new build or a split lands on the roll first. "
+               "Series rebased on different years are not directly comparable "
+               "to each other.")
 
 # --------------------------------------------------------------------- map
 st.divider()
