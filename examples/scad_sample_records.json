@@ -1,0 +1,22 @@
+[
+  {
+    "year": 2021,
+    "taxable_value": 180000,
+    "supporting_evidence": "board-approved appraisal"
+  },
+  {
+    "year": 2022,
+    "taxable_value": 216000,
+    "supporting_evidence": null
+  },
+  {
+    "year": 2023,
+    "taxable_value": 234000,
+    "supporting_evidence": "market comparison summary"
+  },
+  {
+    "year": 2024,
+    "taxable_value": 285000,
+    "supporting_evidence": null
+  }
+]
