@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import data
+import summary
 from theme import style, tokens
 
 st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
@@ -245,6 +246,51 @@ st.caption(
     "A dashed line above its solid partner means the bill outran the "
     "appraisal — rates and exemptions moving, not the market."
 )
+
+# ------------------------------------------------------------------ summary
+st.divider()
+focus = summary.render(years, data.trend(tuple(picked)), meta, t)
+
+if focus:
+    row = meta.loc[focus]
+    st.markdown(f"#### {focus} · {row.owner_name}")
+    st.caption(f"{row.situs_address or '(no situs)'} · {row.use_code} · "
+               f"[parcel page]({data.parcel_url(row.gis_parcel_id)})")
+
+    detail = years[years.account == focus].sort_values("tax_year")
+    left, right = st.columns(2)
+    with left:
+        st.dataframe(
+            detail[["tax_year", "appraised_value", "assessed_value", "total_tax",
+                    "appraised_pct_yoy", "tax_pct_yoy"]],
+            width="stretch", hide_index=True, column_config={
+                "tax_year": st.column_config.NumberColumn("Year", format="%d"),
+                "appraised_value": st.column_config.NumberColumn(
+                    "Appraised", format="$%,.0f"),
+                "assessed_value": st.column_config.NumberColumn(
+                    "Assessed", format="$%,.0f"),
+                "total_tax": st.column_config.NumberColumn("Tax", format="$%,.2f"),
+                "appraised_pct_yoy": st.column_config.NumberColumn(
+                    "Appraised YoY", format="%+.1f%%"),
+                "tax_pct_yoy": st.column_config.NumberColumn(
+                    "Tax YoY", format="%+.1f%%")})
+    with right:
+        # Which taxing unit actually moved the bill, for the same account.
+        jur = data.by_jurisdiction((focus,))
+        st.dataframe(
+            jur[["tax_year", "jurisdiction", "taxable_value", "tax_rate",
+                 "tax_amount", "tax_change_yoy"]].sort_values(
+                     ["tax_year", "jurisdiction"], ascending=[False, True]),
+            width="stretch", hide_index=True, column_config={
+                "tax_year": st.column_config.NumberColumn("Year", format="%d"),
+                "jurisdiction": "Jurisdiction",
+                "taxable_value": st.column_config.NumberColumn(
+                    "Taxable", format="$%,.0f"),
+                "tax_rate": st.column_config.NumberColumn(
+                    "Rate /$100", format="%.6f"),
+                "tax_amount": st.column_config.NumberColumn("Tax", format="$%,.2f"),
+                "tax_change_yoy": st.column_config.NumberColumn(
+                    "Δ Tax", format="$%,.2f")})
 
 # --------------------------------------------------------------------- map
 st.divider()

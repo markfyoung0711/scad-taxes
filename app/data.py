@@ -66,6 +66,14 @@ def by_year(selected: tuple[str, ...]) -> pd.DataFrame:
 
 
 @st.cache_data
+def trend(selected: tuple[str, ...]) -> pd.DataFrame:
+    """One row per account: the whole span compressed to totals and rates."""
+    return _con().execute(
+        "SELECT * FROM mart.v_parcel_trend WHERE account IN "
+        f"({','.join('?' * len(selected))}) ORDER BY account", list(selected)).df()
+
+
+@st.cache_data
 def by_jurisdiction(selected: tuple[str, ...]) -> pd.DataFrame:
     return _con().execute(
         "SELECT * FROM mart.v_jurisdiction_change WHERE account IN "

@@ -169,6 +169,30 @@ A split or a new build can index into the hundreds while everything else sits
 near 100, so the y axis switches to log once the spread passes 5×; the sidebar
 overrides it either way.
 
+### Tax increase summary
+
+A year × account matrix: each cell is that year's change against the one
+before, shaded green / yellow / red. The percentage is printed in the cell, so
+the banding is never the only thing carrying the meaning.
+
+Thresholds default to **3.5% / 10%** — the low band is Texas SB2's
+voter-approval rate, what a city or county can raise in new revenue without an
+election (2.5% for school districts) — and both are editable.
+
+Two things the table deliberately does not smooth over:
+
+- **Average.** The mean of yearly percentages overstates a volatile series, so
+  the compound annual rate sits beside it and is the default sort. Trichel's
+  mean YoY is +14.9%; its CAGR is +7.4%.
+- **Near-zero bases.** A parcel losing an agricultural valuation can go from a
+  $77 bill to a $14,269 one — a real +18,345%, which buries every ordinary
+  increase. Cells switch between % and $, and the ranking offers total dollars
+  and biggest single-year jump alongside the percentages.
+
+Selecting a row drills into that account: every year's appraised, assessed and
+tax figures, and the per-jurisdiction breakdown showing which taxing unit
+actually moved the bill.
+
 The map below plots the same selection, colored by sector or by tax change
 since the baseline year, and needs `scad geocode && scad build` first.
 
