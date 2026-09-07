@@ -53,6 +53,12 @@ with st.sidebar:
                             format_func=lambda a: labels[a])
 
     st.header("Display")
+    colour_mode = st.radio(
+        "Color by", ["Measure", "Sector"],
+        index=0 if len(picked) <= 2 else 1, horizontal=True,
+        help="Measure reads one or two accounts closely — value against tax. "
+             "Sector reads many at once, where there are more accounts than a "
+             "categorical palette can hold.")
     mode = st.radio("Theme", ["light", "dark"], horizontal=True)
     label_lines = st.toggle("Label lines on the chart",
                             value=len(picked) <= MAX_LABELLED)
@@ -78,6 +84,11 @@ meta = acct_df.set_index("account")
 # warehouse -- so filtering the list never repaints the sectors that remain.
 sector_color = {s: t["series"][i % len(t["series"])]
                 for i, s in enumerate(sorted(acct_df.sector.dropna().unique()))}
+# Colouring by measure puts appraised value against tax paid for one account;
+# the account is then carried by the dash pattern instead.
+measure_color = {"appraised_value": t["series"][0], "total_tax": t["series"][1]}
+BY_MEASURE = colour_mode == "Measure"
+DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
 
 st.title("Appraised value & taxes over time")
 st.caption(
@@ -90,26 +101,39 @@ fig = go.Figure()
 seen_sectors: set[str] = set()
 pending_labels: list[tuple] = []
 
-for acct in picked:
+for n, acct in enumerate(picked):
     d = years[years.account == acct].sort_values("tax_year")
     if d.empty:
         continue
     row = meta.loc[acct]
     sector = row.sector or "Unclassified"
-    colour = sector_color.get(sector, t["series"][0])
     url = data.parcel_url(row.gis_parcel_id)
     who = f"{acct} · {short(row.owner_name, 30)}"
 
-    for col_name, nice, dash in MEASURES:
+    for col_name, nice, sector_dash in MEASURES:
         base = d[col_name].iloc[0]
         if not base:
             continue
         idx = 100.0 * d[col_name] / base
-        first = sector not in seen_sectors and dash == "solid"
-        seen_sectors.add(sector) if dash == "solid" else None
+
+        if BY_MEASURE:
+            colour = measure_color[col_name]
+            dash = DASHES[n % len(DASHES)]
+            key = f"{nice}|{acct}" if len(picked) > 1 else nice
+            legend_name = f"{nice} · {acct}" if len(picked) > 1 else nice
+            first = key not in seen_sectors
+            seen_sectors.add(key)
+        else:
+            colour = sector_color.get(sector, t["series"][0])
+            dash = sector_dash
+            legend_name = sector
+            first = sector not in seen_sectors and sector_dash == "solid"
+            if sector_dash == "solid":
+                seen_sectors.add(sector)
+
         fig.add_trace(go.Scatter(
             x=d.tax_year, y=idx, mode="lines+markers",
-            name=sector, legendgroup=sector, showlegend=first,
+            name=legend_name, legendgroup=legend_name, showlegend=first,
             line=dict(color=colour, width=2, dash=dash),
             marker=dict(size=7),
             customdata=[[who, row.situs_address or "", nice, v, iv]
@@ -123,8 +147,9 @@ for acct in picked:
         # linked to the district's parcel page, with the owner beside it.
         # Held until the axis type is known -- see the note below.
         idx = 100.0 * d.appraised_value / d.appraised_value.iloc[0]
-        pending_labels.append((d.tax_year.iloc[-1], idx.iloc[-1], colour,
-                               f'<a href="{url}" style="color:{colour}">{acct}</a> '
+        label_colour = measure_color["appraised_value"] if BY_MEASURE else colour
+        pending_labels.append((d.tax_year.iloc[-1], idx.iloc[-1], label_colour,
+                               f'<a href="{url}" style="color:{label_colour}">{acct}</a> '
                                f'<span style="opacity:.75">'
                                f'{short(row.owner_name, 20)}</span>'))
 
@@ -176,7 +201,9 @@ st.plotly_chart(fig, width="stretch")
 
 st.caption(
     ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
-    "Solid is appraised value, dashed is tax paid; color is the sector. "
+    ("Blue is appraised value, orange is tax paid; the dash pattern is the "
+     "account. " if BY_MEASURE else
+     "Solid is appraised value, dashed is tax paid; color is the sector. ") +
     "Account numbers at the right link to the district's parcel page. "
     "A dashed line above its solid partner means the bill outran the "
     "appraisal — rates and exemptions moving, not the market."

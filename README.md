@@ -102,9 +102,17 @@ and its solid partner is how far the tax bill diverged from the appraisal.
 (A dual-axis chart would answer the same question by putting two y-scales on
 one plot, which makes the crossing point an artefact of the scaling.)
 
-Filters cascade: sector → use code → account. Color carries the sector, dash
-carries the measure. Account numbers at the right edge link to the district's
-own parcel page.
+Filters cascade: sector → use code → account. **Color by** switches how the
+lines are read, and defaults on the account count:
+
+- **Measure** (one or two accounts) — blue is appraised value, orange is tax
+  paid, dash pattern is the account. The close read: value against tax.
+- **Sector** (three or more) — color is the sector, solid is value and dashed
+  is tax. There are more accounts than a categorical palette can hold, so
+  identity moves up to the sector.
+
+Account numbers at the right edge link to the district's own parcel page, with
+the owner beside them.
 
 A split or a new build can index into the hundreds while everything else sits
 near 100, so the y axis switches to log once the spread passes 5×; the sidebar
