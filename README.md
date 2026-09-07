@@ -67,3 +67,29 @@ market movement. Taxable value also differs per jurisdiction, since exemptions
 apply differently to the county, ISD, college and ESD.
 
 Rates are published per $100 of value.
+
+## Chart gallery
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+Eight forms of the same question, so you can pick one. Sidebar picks accounts,
+theme and whether tables show.
+
+1. **Small multiples** — three panels on one time axis (recommended)
+2. **Indexed to a common base** — both measures rebased to 100, one axis
+3. **Area + line (indexed)** — value as the band, tax as the line
+4. **Waterfall** — year-over-year change only
+5. **Slope** — first year vs last
+6. **Stacked bar** — tax by jurisdiction (legitimately parts of a whole)
+7. **Heatmap** — which year and which taxing unit moved
+8. **Dual axis** — included so you can rule it out
+
+Note on 8: two y-scales are chosen by the renderer, so where the lines appear
+to cross is an artefact of the scaling. Chart 2 answers the same question
+without that problem.
+
+Colors come from a validated categorical palette (adjacent-pair CVD ΔE ≥ 8 in
+both light and dark). Aqua and yellow sit below 3:1 on the light surface, so
+the charts using them also offer the table view.
