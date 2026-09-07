@@ -35,7 +35,9 @@ def _query(client: Client, url: str, where: str, out_fields: str, *,
     }
     if centroid:
         params["returnCentroid"] = "true"
-    resp = client.get(url, params=params)
+    # An IN list of a hundred account numbers overruns the server's URL limit,
+    # so these queries go as form posts.
+    resp = client.post(url, data=params)
     payload = resp.json()
     if "error" in payload:
         raise RuntimeError(f"ArcGIS error: {payload['error']}")
@@ -127,6 +129,60 @@ def locate(client: Client, parcels: list[dict]) -> list[dict]:
     for p in parcels:
         hit = located.get(p.get("gis_parcel_id"))
         if hit:
-            hit.setdefault("account", None)
-            hit["account"] = hit["account"] or p.get("account")
+            hit["account"] = hit.get("account") or p.get("account")
+
+    # Every row carries the district keys whether or not assign_districts runs,
+    # so the staged JSON has a stable shape and the warehouse can read it.
+    for row in located.values():
+        for field in DISTRICT_LAYERS:
+            row.setdefault(field, None)
+            row.setdefault(f"{field}_name", None)
     return sorted(located.values(), key=lambda r: r["gis_parcel_id"])
+
+
+# Districts a located parcel falls inside. The county publishes these as
+# polygons with no account key, so unlike the parcel join these are resolved
+# by point-in-polygon against the geocoded centroid.
+DISTRICT_LAYERS = {
+    "voting_precinct": (f"{ARCGIS}/Smith_County_Voting_Precincts/FeatureServer/0/query",
+                        "PRECINCTID,NAME"),
+    "commissioner_precinct": (f"{ARCGIS}/Commissioner_Precincts/FeatureServer/0/query",
+                              "DISTRICTID,NAME,REPNAME"),
+}
+
+
+def _polygons(client: Client, url: str, out_fields: str) -> list[tuple]:
+    from shapely.geometry import shape
+
+    resp = client.post(url, data={"where": "1=1", "outFields": out_fields,
+                                  "returnGeometry": "true", "outSR": "4326",
+                                  "f": "geojson"})
+    payload = resp.json()
+    land("geocode_districts", f"{url.split('/services/')[1].split('/')[0]}.geojson",
+         resp.content, url=url, meta={"features": len(payload.get("features", []))})
+    return [(shape(f["geometry"]), f["properties"])
+            for f in payload.get("features", []) if f.get("geometry")]
+
+
+def assign_districts(client: Client, located: list[dict]) -> list[dict]:
+    """Stamp each located parcel with the districts its centroid falls in."""
+    from shapely.geometry import Point
+    from shapely.strtree import STRtree
+
+    for field, (url, out_fields) in DISTRICT_LAYERS.items():
+        polys = _polygons(client, url, out_fields)
+        if not polys:
+            continue
+        shapes = [p for p, _ in polys]
+        tree = STRtree(shapes)
+        for row in located:
+            point = Point(row["longitude"], row["latitude"])
+            row[field] = None
+            row[f"{field}_name"] = None
+            for i in tree.query(point):
+                if shapes[i].contains(point):
+                    props = polys[i][1]
+                    row[field] = props.get("PRECINCTID") or props.get("DISTRICTID")
+                    row[f"{field}_name"] = props.get("NAME")
+                    break
+    return located

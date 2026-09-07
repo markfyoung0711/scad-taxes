@@ -17,6 +17,12 @@ SELECT
     -- 'parcel_centroid' is the polygon's own centre; 'address_point' is the
     -- fallback for improvement-only accounts and recent splits with no polygon.
     l.source                           AS location_source,
+    -- Districts the centroid falls inside; resolved by point-in-polygon,
+    -- since those layers carry no account key.
+    l.voting_precinct                  AS voting_precinct,
+    l.voting_precinct_name             AS voting_precinct_name,
+    l.commissioner_precinct            AS commissioner_precinct,
+    l.commissioner_precinct_name       AS commissioner_precinct_name,
     d._staged_at                       AS staged_at
 FROM raw.parcel_location d, UNNEST(d.locations) AS t(l);
 

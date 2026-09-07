@@ -5,7 +5,7 @@ import argparse
 import random
 import sys
 
-from . import acquire, geocode, parse, stage, warehouse
+from . import acquire, export, geocode, parse, stage, warehouse
 from .http import Client
 
 
@@ -82,7 +82,8 @@ def cmd_geocode(args) -> int:
                ).fetchall()]
     con.close()
 
-    rows = geocode.locate(Client(), parcels)
+    client = Client()
+    rows = geocode.assign_districts(client, geocode.locate(client, parcels))
     path = STAGED / "geocode" / "locations.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"_staged_at": utcnow(), "locations": rows}))
@@ -101,6 +102,15 @@ def cmd_build(args) -> int:
     path = warehouse.build()
     for table, n in warehouse.counts(path).items():
         print(f"{table}: {n} rows", file=sys.stderr)
+    return 0
+
+
+def cmd_export(args) -> int:
+    from pathlib import Path
+
+    path = Path(args.out)
+    n = export.write(path, args.limit, town=args.town)
+    print(f"wrote {n} homeowners -> {path}", file=sys.stderr)
     return 0
 
 
@@ -160,6 +170,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("build", help="rebuild the DuckDB warehouse from staged JSON")
     p.set_defaults(func=cmd_build)
+
+    p = sub.add_parser("export", help="write the homeowner JSON extract")
+    p.add_argument("--out", default="data/export/homeowners.json")
+    p.add_argument("--limit", type=int, help="cap the number of records")
+    p.add_argument("--town", help="only this town")
+    p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("report", help="print value and tax trends")
     p.add_argument("--account", help="limit to one account, e.g. R107193")

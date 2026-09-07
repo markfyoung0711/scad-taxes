@@ -38,6 +38,15 @@ SELECT
     TRY_CAST(parcel.acreage AS DECIMAL(12,4)) AS acreage,
     parcel.subdivision                      AS subdivision,
     parcel.exemptions                       AS exemptions,
+    -- Exemptions render as "HS: Homestead (11.13(b))  (100%)"; the code is
+    -- everything before the colon.
+    list_transform(parcel.exemptions,
+                   x -> TRIM(SPLIT_PART(x, ':', 1)))  AS exemption_codes,
+    -- The district withholds some exemptions online ("For privacy reasons not
+    -- all exemptions are shown"), so FALSE means "not shown", not "none held".
+    list_contains(list_transform(parcel.exemptions,
+                                 x -> TRIM(SPLIT_PART(x, ':', 1))), 'HS')
+                                            AS homestead_shown,
     TRY_CAST(parcel.transfer_date AS DATE)  AS transfer_date,
     parcel.instrument_number                AS instrument_number,
     parcel.legal_description                AS legal_description,

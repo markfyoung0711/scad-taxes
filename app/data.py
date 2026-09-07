@@ -17,7 +17,8 @@ def _con() -> duckdb.DuckDBPyConnection:
 def accounts() -> pd.DataFrame:
     return _con().execute(
         "SELECT account, owner_name, situs_address, gis_parcel_id, sector, "
-        "use_code, tax_district FROM mart.dim_parcel ORDER BY account").df()
+        "use_code, homestead_shown, tax_district FROM mart.dim_parcel "
+        "ORDER BY account").df()
 
 
 @st.cache_data

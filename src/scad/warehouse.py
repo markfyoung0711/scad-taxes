@@ -19,6 +19,7 @@ from .config import SQL, STAGED, WAREHOUSE
 
 LAYERS = ["01_raw.sql", "02_stg.sql", "03_mart.sql"]
 GEO_LAYER = "04_geo.sql"
+EXPORT_LAYER = "05_export.sql"
 
 
 def connect(path: Path = WAREHOUSE, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -42,6 +43,7 @@ def build(path: Path = WAREHOUSE) -> Path:
     layers = list(LAYERS)
     if list((STAGED / "geocode").glob("*.json")):
         layers.append(GEO_LAYER)
+        layers.append(EXPORT_LAYER)
 
     con = duckdb.connect(str(tmp))
     try:

@@ -23,8 +23,10 @@ from theme import style, tokens
 
 st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
 
+# "Tax paid" is the whole levy in dollars, not a rate: the district publishes
+# rates per $100 of value, but what a line here traces is the bill itself.
 MEASURES = [("appraised_value", "Appraised value", "solid"),
-            ("total_tax", "Tax paid", "dash")]
+            ("total_tax", "Tax paid (total $)", "dash")]
 MAX_LABELLED = 8
 MAX_SERIES = 8
 CHART_H = 560
@@ -142,7 +144,9 @@ for n, acct in enumerate(picked):
 
         dash = sector_dash  # solid for appraised value, dashed for tax paid
         if SOLO:
-            colour, legend_name, dash = measure_color[col_name], nice, "solid"
+            # Colour is free to carry the measure with a single parcel, but the
+            # dash still means what it means everywhere else.
+            colour, legend_name = measure_color[col_name], nice
             first = True
         elif colour_mode == "Account":
             colour = account_color[acct]
@@ -231,9 +235,12 @@ st.plotly_chart(fig, width="stretch")
 
 st.caption(
     ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
-    ("Blue is appraised value, orange is tax paid. " if SOLO else
+    ("Blue solid is appraised value, orange dashed is tax paid. " if SOLO else
      "Solid is appraised value, dashed is tax paid; color is the "
      f"{colour_mode.lower()}. ") +
+    "Both are indexed, so the lines show movement, not amounts — tax paid is "
+    "the whole levy in dollars, not a rate per $100. Hover for the figures, "
+    "or read the totals in the roster below. "
     "Account numbers at the right link to the district's parcel page. "
     "A dashed line above its solid partner means the bill outran the "
     "appraisal — rates and exemptions moving, not the market."
@@ -305,12 +312,38 @@ else:
 # ------------------------------------------------------------------ roster
 st.divider()
 st.subheader("Parcels")
+latest_year = int(years.tax_year.max())
+totals = (years.groupby("account")
+          .agg(tax_all_years=("total_tax", "sum"),
+               years_taxed=("total_tax", "count"))
+          .reset_index())
+latest = (years[years.tax_year == latest_year]
+          [["account", "appraised_value", "total_tax"]]
+          .rename(columns={"appraised_value": "appraised_latest",
+                           "total_tax": "tax_latest"}))
+
 roster = (candidates[candidates.account.isin(picked)]
           .assign(link=lambda df: df.gis_parcel_id.map(data.parcel_url))
-          [["account", "owner_name", "situs_address", "sector", "use_code", "link"]])
-st.dataframe(roster, width="stretch", hide_index=True,
-             column_config={"link": st.column_config.LinkColumn(
-                 "Detail", display_text="parcel page")})
+          .merge(latest, on="account", how="left")
+          .merge(totals, on="account", how="left")
+          [["account", "owner_name", "situs_address", "sector", "use_code",
+            "homestead_shown", "appraised_latest", "tax_latest",
+            "tax_all_years", "years_taxed", "link"]])
+money = st.column_config.NumberColumn(format="$%,.0f")
+st.dataframe(roster, width="stretch", hide_index=True, column_config={
+    "homestead_shown": st.column_config.CheckboxColumn("Homestead"),
+    "appraised_latest": st.column_config.NumberColumn(
+        f"Appraised {latest_year}", format="$%,.0f"),
+    "tax_latest": st.column_config.NumberColumn(
+        f"Tax {latest_year}", format="$%,.2f"),
+    "tax_all_years": st.column_config.NumberColumn(
+        "Tax, all years", format="$%,.2f"),
+    "years_taxed": st.column_config.NumberColumn("Years taxed"),
+    "link": st.column_config.LinkColumn("Detail", display_text="parcel page")})
+st.caption(
+    "Homestead is read off the parcel page's exemptions. The district "
+    "withholds some exemptions online, so an unticked box means \"not shown\", "
+    "not \"none held\".")
 
 if show_table:
     st.subheader("Values by year")

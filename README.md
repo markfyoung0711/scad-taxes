@@ -32,6 +32,14 @@ The build is idempotent and replayed from staged files; nothing is mutated in
 place, and every warehouse row traces back through the manifest to the bytes
 it came from.
 
+## Exemptions
+
+The parcel page lists exemptions as `HS: Homestead (11.13(b))  (100%)`, which
+staging splits into `exemption_codes` and a `homestead_shown` flag. The
+district withholds some exemptions online — "For privacy reasons not all
+exemptions are shown" — so a false flag means *not shown*, not *none held*.
+The certified roll's exemption file is authoritative, for the current year.
+
 ## Geocoding
 
 Locations come from Smith County's own GIS, joined on the account number
@@ -39,6 +47,10 @@ rather than matched on address text: the `Parcels` layer's `ACCOUNT` is the
 same identifier as the roll's, and `PIN` is the R-number. Parcels with no
 polygon of their own — improvement-only accounts and recent splits — fall back
 to the county address-point layer.
+
+Geocoding also stamps each parcel with the districts its centroid falls
+inside — voting precinct and commissioner precinct — resolved by
+point-in-polygon, since those layers carry no account key.
 
 ```bash
 scad geocode && scad build
@@ -56,6 +68,7 @@ scad geocode && scad build
 - `mart.dim_parcel_location` — latitude/longitude per parcel, with the source
   (`parcel_centroid` or `address_point`)
 - `mart.v_parcel_map` — account × year with a location on it: the map grain
+- `mart.v_homeowner` — one row per parcel, flattened for the export
 
 ## Usage
 
@@ -69,7 +82,36 @@ scad fetch  --parcel-id 1.00000.0053.00.002000              # named parcels
 scad geocode                                  # locate them against county GIS
 scad build
 scad report --account R107193
+scad export --out data/export/homeowners.json   # JSON extract
 ```
+
+### Homeowner extract
+
+`scad export` writes one record per parcel with its whole year-by-year
+history:
+
+```json
+{
+  "homeowners": [
+    {
+      "id": "R107193",
+      "name": "YOUNG MARK FRANCIS & ELIZABETH G",
+      "address": "4320 C R 325",
+      "town": "Lindale",
+      "precinct": "3021",
+      "property_type": "house",
+      "homestead_exemption": true,
+      "tax_history": [
+        {"year": 2020, "appraised_value": 310876, "tax_amount": 2886.89}
+      ]
+    }
+  ]
+}
+```
+
+`property_type` follows the district's own use class: A/B/M are dwellings
+(`house`), D and E are land (`acreage`), anything else says `other` rather
+than guessing.
 
 A city search returns thousands of parcels and each one is a separate page
 fetch, so `fetch` refuses more than 50 without `--limit` or `--sample`.

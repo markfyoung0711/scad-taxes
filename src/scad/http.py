@@ -26,11 +26,11 @@ class Client:
             time.sleep(self.delay - gap)
         self._last = time.monotonic()
 
-    def get(self, url: str, *, params=None, tries: int = 3, **kw) -> requests.Response:
+    def _request(self, method: str, url: str, *, tries: int = 3, **kw) -> requests.Response:
         for attempt in range(tries):
             self._wait()
             try:
-                r = self.session.get(url, params=params, timeout=60, **kw)
+                r = self.session.request(method, url, timeout=60, **kw)
                 r.raise_for_status()
                 return r
             except requests.RequestException:
@@ -38,3 +38,9 @@ class Client:
                     raise
                 time.sleep(2 ** attempt)
         raise AssertionError("unreachable")
+
+    def get(self, url: str, *, params=None, tries: int = 3, **kw) -> requests.Response:
+        return self._request("GET", url, params=params, tries=tries, **kw)
+
+    def post(self, url: str, *, data=None, tries: int = 3, **kw) -> requests.Response:
+        return self._request("POST", url, data=data, tries=tries, **kw)
