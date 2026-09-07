@@ -12,6 +12,7 @@ sector is what a regional read is actually about.
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -190,8 +191,13 @@ if pending_labels:
                            xanchor="left", xshift=10,
                            yshift=int(round((hi - pos) / span * PLOT_H - px)),
                            align="left", font=dict(color=colour, size=11))
+# Reserve only as much right margin as the longest label actually needs,
+# rather than a fixed band that reads as dead space for a single account.
+label_px = max((len(re.sub(r"<[^>]+>", "", txt)) for *_, txt in pending_labels),
+               default=0) * 6 + 24
 style(fig, t, height=CHART_H,
-      margin=dict(l=8, r=250 if label_lines else 44, t=32, b=8))
+      margin=dict(l=8, r=min(label_px, 260) if pending_labels else 44,
+                  t=32, b=8))
 # Labels sit in the right margin; without an explicit range their width drags
 # the axis out to a year that has no data.
 fig.update_xaxes(range=[years.tax_year.min() - 0.25, years.tax_year.max() + 0.25],
