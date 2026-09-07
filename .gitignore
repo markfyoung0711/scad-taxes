@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-data/raw/
-data/warehouse/
-data/staged/
+
+# All acquired and derived data stays out of git; it belongs in GCP.
+data/
