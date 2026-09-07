@@ -62,7 +62,11 @@ scad geocode && scad build
   leading letter of the use code (the Texas state property category)
 - `mart.fact_parcel_year` — account × year: building, land, appraised, assessed, cap loss, total tax
 - `mart.fact_parcel_jurisdiction_year` — account × year × jurisdiction: taxable value, rate, tax
-- `mart.v_parcel_value_change` — YoY and since-baseline change, value and tax
+- `mart.v_parcel_value_change` — YoY and since-baseline change, value and tax.
+  Each measure baselines on the first year *it* has a figure
+  (`appraised_base_year`, `tax_base_year`), since a parcel can be appraised
+  before it is levied; the two can differ, and percentages measured from
+  different years are not comparable to each other
 - `mart.v_parcel_trend` — one row per account: total change and CAGR
 - `mart.v_jurisdiction_change` — which jurisdiction drove a year's change
 - `mart.dim_parcel_location` — latitude/longitude per parcel, with the source

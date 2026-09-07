@@ -49,6 +49,7 @@ SELECT
     c.appraised_pct_yoy,
     c.tax_pct_yoy,
     c.base_year,
+    c.tax_base_year,
     c.appraised_pct_since_base,
     c.tax_pct_since_base
 FROM mart.dim_parcel p

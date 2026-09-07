@@ -12,8 +12,13 @@ CREATE OR REPLACE TABLE mart.fact_parcel_jurisdiction_year AS
 SELECT * FROM stg.parcel_jurisdiction;
 
 -- Year-over-year and since-baseline movement in appraised value and tax.
--- Baseline is each account's own earliest published year, which varies by
--- parcel, so it is carried as a column rather than assumed.
+--
+-- Each measure baselines on the first year IT has a figure, not the parcel's
+-- first published year: a new build or a split lands on the roll with an
+-- appraisal before any levy is calculated, and taking the parcel's first year
+-- would baseline the tax on a NULL and null out every percentage after it.
+-- The two base years are carried separately because they can differ, and
+-- percentages measured from different years are not comparable to each other.
 CREATE OR REPLACE VIEW mart.v_parcel_value_change AS
 WITH base AS (
     SELECT
@@ -24,8 +29,12 @@ WITH base AS (
         total_tax,
         LAG(appraised_value) OVER w AS prev_appraised_value,
         LAG(total_tax)       OVER w AS prev_total_tax,
-        FIRST_VALUE(appraised_value) OVER w AS first_appraised_value,
-        FIRST_VALUE(total_tax)       OVER w AS first_total_tax,
+        FIRST_VALUE(appraised_value IGNORE NULLS) OVER w AS first_appraised_value,
+        FIRST_VALUE(total_tax       IGNORE NULLS) OVER w AS first_total_tax,
+        FIRST_VALUE(CASE WHEN appraised_value IS NOT NULL THEN tax_year END
+                    IGNORE NULLS) OVER w AS appraised_base_year,
+        FIRST_VALUE(CASE WHEN total_tax IS NOT NULL THEN tax_year END
+                    IGNORE NULLS) OVER w AS tax_base_year,
         MIN(tax_year) OVER (PARTITION BY account) AS base_year
     FROM mart.fact_parcel_year
     WINDOW w AS (PARTITION BY account ORDER BY tax_year)
@@ -34,6 +43,8 @@ SELECT
     account,
     tax_year,
     base_year,
+    appraised_base_year,
+    tax_base_year,
     appraised_value,
     assessed_value,
     total_tax,
@@ -58,7 +69,11 @@ WITH bounds AS (
         account,
         MIN(tax_year) AS first_year,
         MAX(tax_year) AS last_year,
-        COUNT(*)      AS years_observed
+        COUNT(*)      AS years_observed,
+        -- Same reasoning as above: the tax span is only the years actually
+        -- levied, which can start after the parcel first appears.
+        MIN(tax_year) FILTER (WHERE total_tax IS NOT NULL) AS tax_first_year,
+        MAX(tax_year) FILTER (WHERE total_tax IS NOT NULL) AS tax_last_year
     FROM mart.fact_parcel_year
     GROUP BY account
 )
@@ -71,22 +86,28 @@ SELECT
     b.years_observed,
     f.appraised_value AS first_appraised_value,
     l.appraised_value AS last_appraised_value,
-    f.total_tax       AS first_total_tax,
-    l.total_tax       AS last_total_tax,
+    b.tax_first_year,
+    b.tax_last_year,
+    tf.total_tax      AS first_total_tax,
+    tl.total_tax      AS last_total_tax,
     ROUND(100.0 * (l.appraised_value - f.appraised_value)
           / NULLIF(f.appraised_value, 0), 2) AS appraised_pct_total,
-    ROUND(100.0 * (l.total_tax - f.total_tax)
-          / NULLIF(f.total_tax, 0), 2) AS tax_pct_total,
+    ROUND(100.0 * (tl.total_tax - tf.total_tax)
+          / NULLIF(tf.total_tax, 0), 2) AS tax_pct_total,
     -- Compound annual growth over the observed span.
     ROUND(100.0 * (POWER(l.appraised_value / NULLIF(f.appraised_value, 0),
                          1.0 / NULLIF(b.last_year - b.first_year, 0)) - 1), 2)
         AS appraised_cagr_pct,
-    ROUND(100.0 * (POWER(l.total_tax / NULLIF(f.total_tax, 0),
-                         1.0 / NULLIF(b.last_year - b.first_year, 0)) - 1), 2)
+    ROUND(100.0 * (POWER(tl.total_tax / NULLIF(tf.total_tax, 0),
+                         1.0 / NULLIF(b.tax_last_year - b.tax_first_year, 0)) - 1), 2)
         AS tax_cagr_pct
 FROM bounds b
 JOIN mart.fact_parcel_year f ON f.account = b.account AND f.tax_year = b.first_year
 JOIN mart.fact_parcel_year l ON l.account = b.account AND l.tax_year = b.last_year
+LEFT JOIN mart.fact_parcel_year tf
+       ON tf.account = b.account AND tf.tax_year = b.tax_first_year
+LEFT JOIN mart.fact_parcel_year tl
+       ON tl.account = b.account AND tl.tax_year = b.tax_last_year
 LEFT JOIN mart.dim_parcel p ON p.account = b.account;
 
 -- Which taxing jurisdiction actually drove a year's change.

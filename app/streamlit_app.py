@@ -277,21 +277,31 @@ else:
                                    "Tax %{customdata[4]:$,.0f}<extra></extra>")))
         else:
             # Diverging on a neutral midpoint: blue is a cut, red a rise.
-            pct = points.tax_pct_since_base.fillna(0)
+            # A parcel with no levied year has no baseline to measure from;
+            # colouring it zero would paint "never taxed" as "no change", so
+            # it is left off and counted underneath instead.
+            shown = points[points.tax_pct_since_base.notna()]
+            untaxed = len(points) - len(shown)
+            pct = shown.tax_pct_since_base
             limit = float(pct.abs().max() or 1)
             fig.add_trace(go.Scattermap(
-                lat=points.latitude, lon=points.longitude, mode="markers",
+                lat=shown.latitude, lon=shown.longitude, mode="markers",
                 marker=dict(size=15, color=pct, cmin=-limit, cmax=limit,
                             colorscale=[[0.0, t["pos"]], [0.5, t["mid"]],
                                         [1.0, t["neg"]]],
                             colorbar=dict(title="Tax %<br>vs base",
                                           tickfont=dict(color=t["text_secondary"]))),
-                customdata=points[["account", "owner_name", "situs_address",
-                                   "total_tax", "tax_pct_since_base"]].values,
+                customdata=shown[["account", "owner_name", "situs_address",
+                                  "total_tax", "tax_pct_since_base",
+                                  "tax_base_year"]].values,
                 hovertemplate=("%{customdata[0]} · %{customdata[1]}<br>"
                                "%{customdata[2]}<br>"
                                "Tax %{customdata[3]:$,.0f} "
-                               "(%{customdata[4]:+.0f}% vs base)<extra></extra>")))
+                               "(%{customdata[4]:+.0f}% since %{customdata[5]})"
+                               "<extra></extra>")))
+            if untaxed:
+                st.caption(f"{untaxed} parcel(s) not plotted: no levied year to "
+                           f"measure a change from.")
 
         fig.update_layout(
             map=dict(style="carto-darkmatter" if mode == "dark" else "carto-positron",
