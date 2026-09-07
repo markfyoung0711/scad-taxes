@@ -57,8 +57,6 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
     matrix = (years.pivot_table(index="account", columns="tax_year",
                                 values="tax_pct_yoy", aggfunc="first")
               .sort_index(axis=1))
-    # Year headers alongside text labels would make a mixed-type column index,
-    # which Arrow cannot round-trip.
     matrix.columns = [str(int(c)) for c in matrix.columns]
     year_cols = list(matrix.columns)
 
@@ -86,6 +84,11 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
     table["Biggest $ jump"] = dollars.max(axis=1, skipna=True)
     table["Tax, all years"] = (years.groupby("account").total_tax.sum()
                                .reindex(matrix.index))
+
+    # Year headers pivot out as ints and the rest are labels; a mixed column
+    # index cannot round-trip through Arrow, so the whole set is coerced here
+    # rather than at each place one is built.
+    table.columns = [str(c) for c in table.columns]
 
     sort_column = {"Compound annual %": "CAGR", "Total %": "Total %",
                    "Total $ increase": "Total $",
