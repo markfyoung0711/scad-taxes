@@ -64,10 +64,14 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
     # identify a row; the district's use code is what tells them apart, and it
     # earns its own column so rows can be grouped by it.
     info = meta.reindex(matrix.index)
+    # The district stores these as "D20: FARM OR RANCH IMPR ON QUALIFIED AG
+    # LAND"; the code alone does not tell a reader what the parcel is.
     summary = (trend.set_index("account")
                .reindex(matrix.index)
                .assign(owner=info.owner_name,
-                       use=info.use_code.fillna("").str.split(":").str[0].str.strip()))
+                       use=info.use_code.fillna("")
+                           .str.replace(r"^\s*([A-Z0-9]+)\s*:\s*", r"\1 · ", regex=True)
+                           .str.strip()))
     # Dollar movement alongside the percentage: a bill going $77 -> $14,269
     # and one going $4,000 -> $4,800 are not the same event, and neither
     # measure describes both.
@@ -123,10 +127,10 @@ def render(years: pd.DataFrame, trend: pd.DataFrame, meta: pd.DataFrame,
         styled, width="stretch", on_select="rerun",
         selection_mode="single-row", key="summary_table",
         column_config={"Use": st.column_config.TextColumn(
-            "Use", width="small",
-            help="The district's property use code — A is single-family, D "
-                 "qualified agricultural, E rural land. One owner can hold "
-                 "several parcels under different codes.")})
+            "Use", width="medium",
+            help="The district's property use classification. One owner can "
+                 "hold several parcels under different codes, so this is what "
+                 "tells two rows with the same name apart.")})
     st.caption(
         f"Each cell is that year's change against the one before, shaded green "
         f"to {green:g}%, yellow to {yellow:g}%, red above — the shading always "
