@@ -116,9 +116,8 @@ the owner beside them.
 
 Each measure is indexed to 100 at the first year *it* has a figure, not the
 parcel's first year — a new build or a split lands on the roll with an
-appraisal before any levy is calculated. Where those base years differ, or a
-measure is missing entirely, the chart says so underneath rather than dropping
-the series.
+appraisal before any levy is calculated, and indexing off the parcel's base
+year would divide by a missing number and drop the whole series.
 
 A split or a new build can index into the hundreds while everything else sits
 near 100, so the y axis switches to log once the spread passes 5×; the sidebar

@@ -125,7 +125,6 @@ st.caption(
 fig = go.Figure()
 seen_sectors: set[str] = set()
 pending_labels: list[tuple] = []
-coverage: list[tuple] = []   # (account, label, measure, first year with data)
 
 for n, acct in enumerate(picked):
     d = years[years.account == acct].sort_values("tax_year")
@@ -137,12 +136,9 @@ for n, acct in enumerate(picked):
     who = f"{acct} · {short(row.owner_name, 30)}"
 
     for col_name, nice, sector_dash in MEASURES:
-        idx, base_year = rebase(d[col_name], d.tax_year)
+        idx, _ = rebase(d[col_name], d.tax_year)
         if idx is None:
-            coverage.append((acct, who, nice, None))
             continue
-        if base_year != int(d.tax_year.iloc[0]):
-            coverage.append((acct, who, nice, base_year))
 
         dash = sector_dash  # solid for appraised value, dashed for tax paid
         if SOLO:
@@ -242,22 +238,6 @@ st.caption(
     "A dashed line above its solid partner means the bill outran the "
     "appraisal — rates and exemptions moving, not the market."
 )
-
-if coverage:
-    lines = []
-    for acct, who, measure, first in sorted(set(coverage)):
-        if first is None:
-            lines.append(f"- **{who}** — no {measure.lower()} on record at all; "
-                         f"that series is absent from the chart.")
-        else:
-            lines.append(f"- **{who}** — {measure.lower()} starts in {first}, "
-                         f"after its first appraised year, so it is indexed to "
-                         f"100 at {first} rather than at the parcel's base year.")
-    st.warning("**Incomplete tax history**\n\n" + "\n".join(lines) +
-               "\n\nA parcel can carry an appraisal before any levy is "
-               "calculated — a new build or a split lands on the roll first. "
-               "Series rebased on different years are not directly comparable "
-               "to each other.")
 
 # --------------------------------------------------------------------- map
 st.divider()
