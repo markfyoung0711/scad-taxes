@@ -52,6 +52,30 @@ def search(term: str, limit: int = 200) -> pd.DataFrame:
 
 
 @st.cache_data
+def search_county(term: str, limit: int = 50) -> pd.DataFrame:
+    """Search the full certified roll, not just the parcels with history.
+
+    The roll covers every account in the county for the current year; the
+    year-by-year history only covers the towns that have been crawled. A name
+    can be absent from one and present in the other, and saying which is more
+    useful than saying "not found".
+    """
+    term = (term or "").strip()
+    if not term:
+        return pd.DataFrame()
+    like = f"%{term.upper()}%"
+    return _con().execute(
+        """SELECT account, owner_name, situs_address, use_code,
+                  market_value, assessed_value, total_tax
+           FROM mart.fact_county_parcel_year
+           WHERE tax_year = (SELECT MAX(tax_year) FROM mart.fact_county_parcel_year)
+             AND (UPPER(account) LIKE ? OR UPPER(owner_name) LIKE ?
+                  OR UPPER(situs_address) LIKE ?)
+           ORDER BY owner_name, account LIMIT ?""",
+        [like, like, like, limit]).df()
+
+
+@st.cache_data
 def map_points(selected: tuple[str, ...], tax_year: int) -> pd.DataFrame:
     """One located parcel per row for a single year."""
     if not _has_locations():

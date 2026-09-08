@@ -29,6 +29,9 @@ TIMEOUT = 30
 
 PASS, FAIL = "\033[32mPASS\033[0m", "\033[31mFAIL\033[0m"
 
+CHROME_DEFAULT = os.path.expanduser(
+    "~/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome")
+
 
 class CheckFailed(Exception):
     pass
@@ -126,11 +129,54 @@ def check_origin_closed(_: str) -> str:
     return "BUTTERFLY_KEY set on the serving revision"
 
 
+def check_renders(url: str) -> str:
+    """The page actually renders the app.
+
+    Every check above passed while the live site showed the gate's refusal
+    message: the shell, the bundle and the websocket were all fine, and the
+    app was rendering -- just rendering a refusal, because the Worker was not
+    attaching the shared secret. Nothing short of reading the rendered text
+    catches that, so this drives a real browser.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise CheckFailed("playwright not installed (pip install playwright)")
+
+    chrome = os.environ.get("SMOKE_CHROME", CHROME_DEFAULT)
+    if not os.path.exists(chrome):
+        raise CheckFailed(f"no browser at {chrome}; set SMOKE_CHROME")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(executable_path=chrome, args=["--no-sandbox"])
+        page = browser.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda e: errors.append(str(e)[:120]))
+        try:
+            page.goto(url, wait_until="networkidle", timeout=90_000)
+            page.wait_for_timeout(5_000)
+            body = page.inner_text("body")
+        finally:
+            browser.close()
+
+    if not body.strip():
+        raise CheckFailed("page rendered nothing")
+    if "served through" in body:
+        raise CheckFailed("gate refused the request; is the Worker sending "
+                          "X-Butterfly-Key?")
+    if "Smith County property tax lookup" not in body:
+        raise CheckFailed(f"unexpected content: {body[:100]!r}")
+    if errors:
+        raise CheckFailed(f"javascript errors: {errors[:2]}")
+    return "app visible, no JS errors"
+
+
 CHECKS = [
     ("app shell", check_shell, "site"),
     ("health endpoint", check_health, "site"),
     ("javascript bundle", check_bundle, "site"),
     ("websocket upgrade", check_websocket, "site"),
+    ("page renders", check_renders, "site"),
     ("origin secret set", check_origin_closed, "origin"),
 ]
 

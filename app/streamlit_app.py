@@ -78,14 +78,51 @@ term = st.text_input(
     "Search", placeholder="R107193  ·  YOUNG MARK  ·  4320 C R 325",
     label_visibility="collapsed", key="search_term")
 
-if "picked" not in st.session_state:
-    st.session_state.picked = []
+def clear_search() -> None:
+    """Reset the box and the table's own selection.
+
+    The selection lives inside the dataframe widget's state, so emptying a
+    variable that mirrors it achieves nothing -- the widget re-reports the same
+    rows on the next run and the selection reappears.
+    """
+    st.session_state.search_term = ""
+    st.session_state.pop("match_table", None)
+
 
 matches = data.search(term) if term else pd.DataFrame()
+picked: list[str] = []
 
 if term and matches.empty:
-    st.info(f"Nothing matches “{term}”. Try a surname, a street name, or an "
-            f"account number like R107193.")
+    # Absent from the history set does not mean absent from the county, and
+    # the difference is the useful part of the answer.
+    county = data.search_county(term)
+    if county.empty:
+        st.warning(f"No parcel matches “{term}”.")
+        st.markdown(
+            "- **Owner names** are stored surname first — try `YOUNG MARK`, "
+            "not `MARK YOUNG`\n"
+            "- **Addresses** are abbreviated as the district writes them — "
+            "`C R 325`, not `County Road 325`\n"
+            "- **Account numbers** look like `R107193`\n"
+            "- Only Smith County is covered; Chandler, Athens and Malakoff "
+            "are Henderson County")
+    else:
+        st.warning(f"“{term}” is in the certified roll but has no "
+                   f"year-by-year history yet — {len(county)} match(es) below.")
+        st.caption(
+            "History is crawled town by town and Tyler, Lindale, Winona and "
+            "part of Kilgore are done so far. The roll covers all 144,373 "
+            "county accounts, but only for the current year.")
+        st.dataframe(
+            county[["account", "owner_name", "situs_address", "use_code",
+                    "market_value", "assessed_value", "total_tax"]],
+            width="stretch", hide_index=True,
+            column_config={
+                "account": "Account", "owner_name": "Owner",
+                "situs_address": "Address", "use_code": "Use",
+                "market_value": st.column_config.NumberColumn("Market", format="$%,.0f"),
+                "assessed_value": st.column_config.NumberColumn("Assessed", format="$%,.0f"),
+                "total_tax": st.column_config.NumberColumn("Tax", format="$%,.2f")})
 elif not matches.empty:
     st.caption(f"{len(matches)} match(es) — tick the ones to compare.")
     chosen = st.dataframe(
@@ -97,12 +134,14 @@ elif not matches.empty:
             "account": "Account", "owner_name": "Owner",
             "situs_address": "Address", "town": "Town", "use_code": "Use",
             "homestead_shown": st.column_config.CheckboxColumn("Homestead")})
+    # Derived from the table each run rather than accumulated: a new search
+    # replaces the selection instead of quietly adding to it.
     rows = chosen.selection.get("rows") if chosen and chosen.selection else []
-    if rows:
-        st.session_state.picked = list(matches.iloc[rows].account)
+    picked = list(matches.iloc[rows].account) if rows else []
 
-picked = st.session_state.picked
 if not picked:
+    if term and not matches.empty:
+        st.caption("Tick a row above to see its value and tax history.")
     st.stop()
 
 acct_df = data.accounts_for(tuple(picked))
@@ -113,9 +152,8 @@ with st.sidebar:
     st.header("Selection")
     st.write("\n".join(f"- **{a}** · {short(meta.loc[a].owner_name, 24)}"
                         for a in picked))
-    if st.button("Clear selection"):
-        st.session_state.picked = []
-        st.rerun()
+    st.button("New search", on_click=clear_search,
+              help="Clears the box and the ticked rows.")
 
     st.header("Display")
     colour_choices = (["Account", "Sector"] if len(picked) <= MAX_SERIES
