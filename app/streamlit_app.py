@@ -28,9 +28,14 @@ st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
 # Before anything is rendered or queried.
 gate.check()
 
-# "Tax paid" is the whole levy in dollars, not a rate: the district publishes
-# rates per $100 of value, but what a line here traces is the bill itself.
+# Three lines, because two of them hide the story. Market value is what the
+# district thinks the property is worth; assessed value is what it may actually
+# tax after a homestead or agricultural cap; tax paid is the bill. When market
+# runs ahead of assessed, the difference is not forgiven -- the cap only limits
+# how fast assessed may climb, so the gap is revenue the county collects in
+# later years as the cap unwinds.
 MEASURES = [("market_value", "Market value", "solid"),
+            ("assessed_value", "Assessed value", "dot"),
             ("total_tax", "Tax paid (total $)", "dash")]
 MAX_LABELLED = 8
 MAX_SERIES = 8
@@ -185,7 +190,9 @@ sector_color = {name: t["series"][i % len(t["series"])]
                 for i, name in enumerate(data.all_sectors())}
 # Colouring by measure puts market value against tax paid for one account;
 # the account is then carried by the dash pattern instead.
-measure_color = {"market_value": t["series"][0], "total_tax": t["series"][1]}
+measure_color = {"market_value": t["series"][0],
+                 "assessed_value": t["series"][2],
+                 "total_tax": t["series"][1]}
 account_color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(picked)}
 
 # With one parcel there is no identity to encode, so colour is free to carry
@@ -200,6 +207,21 @@ st.caption(
 )
 
 # ------------------------------------------------------------------- chart
+latest = years.sort_values("tax_year").groupby("account").tail(1)
+capped = latest[latest.market_value.notna() & latest.assessed_value.notna()
+                & (latest.market_value > latest.assessed_value)]
+if not capped.empty:
+    deferred = float((capped.market_value - capped.assessed_value).sum())
+    year = int(capped.tax_year.max())
+    which = (f"{len(capped)} of the {len(latest)} selected parcels are"
+             if len(capped) > 1 else "This parcel is")
+    st.info(
+        f"**${deferred:,.0f} of value is not being taxed yet.** {which} "
+        f"appraised above what the district may assess in {year}, because a "
+        f"homestead or agricultural cap limits how fast assessed value can "
+        f"climb. The cap defers that value rather than forgiving it — as it "
+        f"unwinds, the bill rises without the market moving at all.")
+
 fig = go.Figure()
 seen_sectors: set[str] = set()
 pending_labels: list[tuple] = []
@@ -311,9 +333,11 @@ st.plotly_chart(fig, width="stretch")
 
 st.caption(
     ("Log scale — the spread is too wide to read linearly. " if use_log else "") +
-    ("Blue solid is market value, orange dashed is tax paid. " if SOLO else
-     "Solid is market value, dashed is tax paid; color is the "
-     f"{colour_mode.lower()}. ") +
+    ("Blue solid is market value, aqua dotted is assessed value, orange "
+     "dashed is tax paid. Where the dotted line falls below the solid one, "
+     "a cap is holding the taxable value down. " if SOLO else
+     "Solid is market value, dotted is assessed value, dashed is tax paid; "
+     f"color is the {colour_mode.lower()}. ") +
     "Both are indexed, so the lines show movement, not amounts — tax paid is "
     "the whole levy in dollars, not a rate per $100. Hover for the figures, "
     "or read the totals in the roster below. "
