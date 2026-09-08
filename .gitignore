@@ -5,3 +5,8 @@ __pycache__/
 # All acquired and derived data stays out of git; it belongs in GCP.
 data/
 data/*.log
+
+# Secrets. BUTTERFLY_KEY lives here; it must never reach the repo.
+.env
+.env.*
+!.env.example
