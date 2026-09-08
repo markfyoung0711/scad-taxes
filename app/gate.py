@@ -30,7 +30,11 @@ def check() -> None:
         return
 
     try:
-        supplied = st.context.headers.get(HEADER, "")
+        headers = st.context.headers
+        # HTTP/2 lowercases header names and proxies are free to re-case them,
+        # so match without regard to case rather than trusting one spelling.
+        supplied = next(
+            (v for k, v in headers.items() if k.lower() == HEADER.lower()), "")
     except Exception:
         # No request context at all -- a bare `streamlit run` from a terminal,
         # or the AppTest harness. Nothing to gate.
