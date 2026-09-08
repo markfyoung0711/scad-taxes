@@ -97,17 +97,33 @@ def check_websocket(url: str) -> str:
     return "101 Switching Protocols"
 
 
-def check_origin_closed(origin: str) -> str:
-    """The run.app URL refuses to serve the dashboard.
+def check_origin_closed(_: str) -> str:
+    """The shared secret the origin gate depends on is configured.
 
     Cloud Run has to accept unauthenticated callers for Cloudflare to reach it,
-    so the gate's shared secret is the only thing keeping that URL from serving
-    the whole dataset to anyone who finds it.
+    so this key is the only thing keeping the run.app URL from serving the
+    whole dataset to anyone who finds it.
+
+    It has to be checked through the service config rather than over HTTP:
+    Streamlit serves its HTML shell before any Python runs, so an ungated
+    fetch of the origin returns the same shell either way. The gate fires when
+    the script executes, on websocket connect.
     """
-    r = requests.get(origin, timeout=TIMEOUT)
-    if "served through" not in r.text:
-        raise CheckFailed("origin served the app directly; BUTTERFLY_KEY unset?")
-    return "refused, as it should"
+    import shutil
+    import subprocess
+
+    if not shutil.which("gcloud"):
+        raise CheckFailed("gcloud not on PATH; cannot read the service config")
+    out = subprocess.run(
+        ["gcloud", "run", "services", "describe", "butterfly",
+         "--project=butterfly-buckstoplabs", "--region=us-central1",
+         "--format=value(spec.template.spec.containers[0].env)"],
+        capture_output=True, text=True, timeout=60)
+    if out.returncode != 0:
+        raise CheckFailed(out.stderr.strip().splitlines()[-1][:120])
+    if "BUTTERFLY_KEY" not in out.stdout:
+        raise CheckFailed("BUTTERFLY_KEY is not set on the service")
+    return "BUTTERFLY_KEY set on the serving revision"
 
 
 CHECKS = [
@@ -115,7 +131,7 @@ CHECKS = [
     ("health endpoint", check_health, "site"),
     ("javascript bundle", check_bundle, "site"),
     ("websocket upgrade", check_websocket, "site"),
-    ("origin locked down", check_origin_closed, "origin"),
+    ("origin secret set", check_origin_closed, "origin"),
 ]
 
 

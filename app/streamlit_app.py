@@ -66,48 +66,58 @@ def rebase(values: pd.Series, tax_years: pd.Series):
 
 
 # ------------------------------------------------------------------ controls
-acct_df = data.accounts()
+# One box for account number, owner name and address: someone looking
+# themselves up knows one of the three and should not have to say which. At
+# 58,546 parcels a dropdown of every account is not a control, it is a
+# rendering problem.
+st.title("Smith County property tax lookup")
+st.caption("Find a parcel by account number, owner name, or street address. "
+           "Values and taxes run from 2020 to 2026.")
+
+term = st.text_input(
+    "Search", placeholder="R107193  ·  YOUNG MARK  ·  4320 C R 325",
+    label_visibility="collapsed", key="search_term")
+
+if "picked" not in st.session_state:
+    st.session_state.picked = []
+
+matches = data.search(term) if term else pd.DataFrame()
+
+if term and matches.empty:
+    st.info(f"Nothing matches “{term}”. Try a surname, a street name, or an "
+            f"account number like R107193.")
+elif not matches.empty:
+    st.caption(f"{len(matches)} match(es) — tick the ones to compare.")
+    chosen = st.dataframe(
+        matches[["account", "owner_name", "situs_address", "town", "use_code",
+                 "homestead_shown"]],
+        width="stretch", hide_index=True, on_select="rerun",
+        selection_mode="multi-row", key="match_table",
+        column_config={
+            "account": "Account", "owner_name": "Owner",
+            "situs_address": "Address", "town": "Town", "use_code": "Use",
+            "homestead_shown": st.column_config.CheckboxColumn("Homestead")})
+    rows = chosen.selection.get("rows") if chosen and chosen.selection else []
+    if rows:
+        st.session_state.picked = list(matches.iloc[rows].account)
+
+picked = st.session_state.picked
+if not picked:
+    st.stop()
+
+acct_df = data.accounts_for(tuple(picked))
+meta = acct_df.set_index("account")
+st.divider()
 
 with st.sidebar:
-    st.header("Filters")
-    towns = sorted(acct_df.town.dropna().unique())
-    picked_towns = st.multiselect("Town", towns, default=towns)
-
-    in_town = acct_df[acct_df.town.isin(picked_towns)]
-    sectors = sorted(in_town.sector.dropna().unique())
-    picked_sectors = st.multiselect("Sector", sectors, default=sectors)
-
-    in_sector = in_town[in_town.sector.isin(picked_sectors)]
-    uses = sorted(in_sector.use_code.dropna().unique())
-    picked_uses = st.multiselect("Use code", uses, default=uses,
-                                 help="Narrows within the chosen sectors.")
-
-    candidates = in_sector[in_sector.use_code.isin(picked_uses)]
-
-    search = st.text_input("Owner or account", placeholder="e.g. YOUNG or R107193",
-                           help="Matches the owner name or the account number.")
-    if search:
-        needle = search.strip().upper()
-        candidates = candidates[
-            candidates.owner_name.fillna("").str.upper().str.contains(needle, regex=False)
-            | candidates.account.str.upper().str.contains(needle, regex=False)]
-
-    total = len(candidates)
-    shown = candidates.head(MAX_OPTIONS)
-    labels = {r.account: f"{r.account} · {short(r.owner_name, 26)}"
-              for r in shown.itertuples()}
-    picked = st.multiselect(
-        "Accounts", list(labels), default=list(labels)[:DEFAULT_SELECTED],
-        format_func=lambda a: labels[a])
-    if total > MAX_OPTIONS:
-        st.caption(f"{total:,} parcels match. Listing the first {MAX_OPTIONS:,} — "
-                   f"narrow by town, sector or a name to reach the rest.")
-    else:
-        st.caption(f"{total:,} parcel(s) match.")
+    st.header("Selection")
+    st.write("\n".join(f"- **{a}** · {short(meta.loc[a].owner_name, 24)}"
+                        for a in picked))
+    if st.button("Clear selection"):
+        st.session_state.picked = []
+        st.rerun()
 
     st.header("Display")
-    # A categorical palette holds eight hues and they are never cycled, so
-    # colouring by account stops being offered past that.
     colour_choices = (["Account", "Sector"] if len(picked) <= MAX_SERIES
                       else ["Sector"])
     colour_mode = st.radio(
@@ -116,30 +126,25 @@ with st.sidebar:
              "value and dashed for tax paid. Sector groups them once there "
              "are more parcels than a palette can hold.")
     mode = st.radio("Theme", ["light", "dark"], horizontal=True)
-    label_lines = st.toggle("Label lines on the chart",
-                            value=len(picked) <= MAX_LABELLED)
     y_scale = st.radio(
         "Y scale", ["Auto", "Linear", "Log"], horizontal=True,
         help="A parcel that was split or newly improved can index into the "
              "hundreds, flattening everything else on a linear axis. Auto "
              "switches to log once the spread passes 5x.")
+    label_lines = st.toggle("Label lines on the chart",
+                            value=len(picked) <= MAX_LABELLED)
     show_table = st.toggle("Show data table", value=False)
     if st.button("Reload warehouse", help="Pick up a rebuild without restarting"):
         data.reload()
         st.rerun()
 
-if not picked:
-    st.info("No accounts match these filters.")
-    st.stop()
-
 t = tokens(mode)
 years = data.by_year(tuple(picked))
-meta = acct_df.set_index("account")
 
-# One hue per sector, assigned in a fixed order over every sector in the
-# warehouse -- so filtering the list never repaints the sectors that remain.
-sector_color = {s: t["series"][i % len(t["series"])]
-                for i, s in enumerate(sorted(acct_df.sector.dropna().unique()))}
+# One hue per sector across the whole warehouse, not just the selection, so
+# changing what is selected never repaints the sectors that remain.
+sector_color = {name: t["series"][i % len(t["series"])]
+                for i, name in enumerate(data.all_sectors())}
 # Colouring by measure puts market value against tax paid for one account;
 # the account is then carried by the dash pattern instead.
 measure_color = {"market_value": t["series"][0], "total_tax": t["series"][1]}
@@ -150,9 +155,9 @@ account_color = {a: t["series"][i % len(t["series"])] for i, a in enumerate(pick
 # colour belongs to the parcel and the dash tells the two measures apart.
 SOLO = len(picked) == 1
 
-st.title("Market value & taxes over time")
+st.subheader("Market value & taxes over time")
 st.caption(
-    f"{len(picked)} account(s) · {int(years.tax_year.min())}–{int(years.tax_year.max())} · "
+    f"{len(picked)} parcel(s) · {int(years.tax_year.min())}–{int(years.tax_year.max())} · "
     "each series rebased to 100 in its own first published year"
 )
 
@@ -410,7 +415,7 @@ latest = (years[years.tax_year == latest_year]
           .rename(columns={"market_value": "market_latest",
                            "total_tax": "tax_latest"}))
 
-roster = (candidates[candidates.account.isin(picked)]
+roster = (acct_df
           .assign(link=lambda df: df.gis_parcel_id.map(data.parcel_url))
           .merge(latest, on="account", how="left")
           .merge(totals, on="account", how="left")
