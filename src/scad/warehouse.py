@@ -19,6 +19,9 @@ from . import bulk
 from .config import SQL, STAGED, WAREHOUSE
 
 LAYERS = ["01_raw.sql", "02_stg.sql", "03_mart.sql"]
+# Files per read_json call. Large enough that the per-call overhead is
+# irrelevant, small enough that the inferred schemas fit in memory.
+DOCUMENT_BATCH = 2000
 BULK_LAYER = "06_bulk.sql"
 GEO_LAYER = "04_geo.sql"
 EXPORT_LAYER = "05_export.sql"
@@ -40,7 +43,7 @@ def build(path: Path = WAREHOUSE) -> Path:
     for leftover in (tmp, tmp.with_name(tmp.name + ".wal")):
         leftover.unlink(missing_ok=True)
 
-    glob = str(staged / "*.json")
+    documents = sorted(staged.glob("*.json"))
     geo_glob = str(STAGED / "geocode" / "*.json")
     layers = list(LAYERS)
     if list((STAGED / "geocode").glob("*.json")):
@@ -52,12 +55,19 @@ def build(path: Path = WAREHOUSE) -> Path:
 
     con = duckdb.connect(str(tmp))
     try:
+        # Insertion order carries no meaning here and preserving it costs
+        # memory proportional to the whole build.
+        con.execute("SET preserve_insertion_order = false")
+
         for name in layers:
+            if name == "01_raw.sql":
+                con.execute((SQL / name).read_text())
+                load_documents(con, documents)
+                continue
             sql = (SQL / name).read_text()
             # DuckDB named parameters are not allowed in the read_json path
-            # position, so the globs are substituted before execution.
-            con.execute(sql.replace("$staged_glob", f"'{glob}'")
-                           .replace("$geocode_glob", f"'{geo_glob}'"))
+            # position, so the glob is substituted before execution.
+            con.execute(sql.replace("$geocode_glob", f"'{geo_glob}'"))
 
         # The certified roll is the whole county for one year; the parcel-page
         # crawl is a handful of parcels across many. They stay separate tables
@@ -71,6 +81,18 @@ def build(path: Path = WAREHOUSE) -> Path:
 
     os.replace(tmp, path)
     return path
+
+
+def load_documents(con: duckdb.DuckDBPyConnection, files: list[Path]) -> int:
+    """Read staged parcel documents into raw.parcel_document, in batches."""
+    for start in range(0, len(files), DOCUMENT_BATCH):
+        listed = ", ".join(f"'{f}'" for f in files[start:start + DOCUMENT_BATCH])
+        select = f"SELECT * FROM read_json([{listed}], union_by_name := true)"
+        if start == 0:
+            con.execute(f"CREATE OR REPLACE TABLE raw.parcel_document AS {select}")
+        else:
+            con.execute(f"INSERT INTO raw.parcel_document BY NAME {select}")
+    return len(files)
 
 
 def counts(path: Path = WAREHOUSE) -> dict[str, int]:

@@ -19,10 +19,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import data
+import gate
 import summary
 from theme import style, tokens
 
 st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
+
+# Before anything is rendered or queried.
+gate.check()
 
 # "Tax paid" is the whole levy in dollars, not a rate: the district publishes
 # rates per $100 of value, but what a line here traces is the bill itself.
