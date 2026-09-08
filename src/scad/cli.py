@@ -99,9 +99,16 @@ def cmd_geocode(args) -> int:
 
     client = Client()
     rows = geocode.assign_districts(client, geocode.locate(client, parcels))
-    path = STAGED / "geocode" / "locations.json"
+
+    # One object per line, not one object holding every location: a single
+    # JSON object has to fit read_json's maximum_object_size, and at county
+    # scale it does not.
+    path = STAGED / "geocode" / "locations.ndjson"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"_staged_at": utcnow(), "locations": rows}))
+    stamp = utcnow()
+    with path.open("w") as fh:
+        for row in rows:
+            fh.write(json.dumps({**row, "_staged_at": stamp}) + "\n")
 
     by_source: dict[str, int] = {}
     for r in rows:

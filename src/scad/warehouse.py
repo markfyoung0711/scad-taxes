@@ -44,9 +44,9 @@ def build(path: Path = WAREHOUSE) -> Path:
         leftover.unlink(missing_ok=True)
 
     documents = sorted(staged.glob("*.json"))
-    geo_glob = str(STAGED / "geocode" / "*.json")
+    geo_glob = str(STAGED / "geocode" / "*.ndjson")
     layers = list(LAYERS)
-    if list((STAGED / "geocode").glob("*.json")):
+    if list((STAGED / "geocode").glob("*.ndjson")):
         layers.append(GEO_LAYER)
         layers.append(EXPORT_LAYER)
 

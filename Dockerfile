@@ -34,6 +34,15 @@ ENV PATH="/app/.venv/bin:$PATH" \
 EXPOSE 8080
 
 # Cloud Run assigns the port; default to 8080 for a plain `docker run`.
+#
+# CORS and XSRF checks are off because the Cloudflare Worker rewrites the Host
+# header to the run.app name while the browser still sends the custom domain as
+# Origin. Streamlit compares the two and rejects the websocket with a 403,
+# which renders as a blank page. Requests still have to carry the Worker's
+# shared secret to get this far (see app/gate.py), and the app is read-only
+# with no uploads or forms, so neither check is protecting anything here.
 CMD exec streamlit run app/streamlit_app.py \
     --server.port "${PORT:-8080}" \
-    --server.address 0.0.0.0
+    --server.address 0.0.0.0 \
+    --server.enableCORS false \
+    --server.enableXsrfProtection false

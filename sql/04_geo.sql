@@ -2,7 +2,8 @@
 -- account number rather than matched on address text. Built only when
 -- data/staged/geocode exists, so the warehouse is usable before geocoding runs.
 CREATE OR REPLACE TABLE raw.parcel_location AS
-SELECT * FROM read_json($geocode_glob, union_by_name := true);
+SELECT * FROM read_json($geocode_glob, format := 'newline_delimited',
+                        union_by_name := true);
 
 CREATE OR REPLACE TABLE stg.parcel_location AS
 SELECT
@@ -23,8 +24,8 @@ SELECT
     l.voting_precinct_name             AS voting_precinct_name,
     l.commissioner_precinct            AS commissioner_precinct,
     l.commissioner_precinct_name       AS commissioner_precinct_name,
-    d._staged_at                       AS staged_at
-FROM raw.parcel_location d, UNNEST(d.locations) AS t(l);
+    l._staged_at                       AS staged_at
+FROM raw.parcel_location l;
 
 CREATE OR REPLACE TABLE mart.dim_parcel_location AS
 SELECT * FROM stg.parcel_location;

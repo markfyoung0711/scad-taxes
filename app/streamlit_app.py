@@ -35,6 +35,13 @@ MEASURES = [("market_value", "Market value", "solid"),
 MAX_LABELLED = 8
 MAX_SERIES = 8
 CHART_H = 560
+# A county-scale warehouse holds tens of thousands of parcels. Every one of
+# them in a multiselect is a dropdown the browser cannot render, and every one
+# on the chart is two Plotly traces, which kills the instance outright -- so
+# the filters narrow before the widgets are built, and nothing is selected by
+# default beyond a readable handful.
+MAX_OPTIONS = 400
+DEFAULT_SELECTED = 8
 
 
 def short(name: str | None, width: int = 22) -> str:
@@ -76,10 +83,27 @@ with st.sidebar:
                                  help="Narrows within the chosen sectors.")
 
     candidates = in_sector[in_sector.use_code.isin(picked_uses)]
+
+    search = st.text_input("Owner or account", placeholder="e.g. YOUNG or R107193",
+                           help="Matches the owner name or the account number.")
+    if search:
+        needle = search.strip().upper()
+        candidates = candidates[
+            candidates.owner_name.fillna("").str.upper().str.contains(needle, regex=False)
+            | candidates.account.str.upper().str.contains(needle, regex=False)]
+
+    total = len(candidates)
+    shown = candidates.head(MAX_OPTIONS)
     labels = {r.account: f"{r.account} · {short(r.owner_name, 26)}"
-              for r in candidates.itertuples()}
-    picked = st.multiselect("Accounts", list(labels), default=list(labels),
-                            format_func=lambda a: labels[a])
+              for r in shown.itertuples()}
+    picked = st.multiselect(
+        "Accounts", list(labels), default=list(labels)[:DEFAULT_SELECTED],
+        format_func=lambda a: labels[a])
+    if total > MAX_OPTIONS:
+        st.caption(f"{total:,} parcels match. Listing the first {MAX_OPTIONS:,} — "
+                   f"narrow by town, sector or a name to reach the rest.")
+    else:
+        st.caption(f"{total:,} parcel(s) match.")
 
     st.header("Display")
     # A categorical palette holds eight hues and they are never cycled, so
