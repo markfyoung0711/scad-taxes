@@ -9,3 +9,5 @@ __pycache__/
 data/raw/
 data/staged/
 data/export/
+# Local backups of earlier warehouse builds; only scad.duckdb ships.
+data/warehouse/scad-*.duckdb

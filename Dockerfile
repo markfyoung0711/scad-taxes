@@ -1,9 +1,9 @@
 # Streamlit dashboard for Cloud Run.
 #
-# The warehouse is a single 3 MB DuckDB file that only changes when the
-# pipeline is re-run, so it is baked into the image: no bucket to mount, no
-# credentials at runtime, and the container is a complete, reproducible
-# snapshot of what the site was serving.
+# The warehouse is a single DuckDB file (~340 MB for the county) that only
+# changes when the pipeline is re-run, so it is baked into the image: no
+# bucket to mount, no credentials at runtime, and the container is a complete,
+# reproducible snapshot of what the site was serving.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -41,8 +41,13 @@ EXPOSE 8080
 # which renders as a blank page. Requests still have to carry the Worker's
 # shared secret to get this far (see app/gate.py), and the app is read-only
 # with no uploads or forms, so neither check is protecting anything here.
+#
+# Websocket compression because the county heat map resends ~117k dots on
+# every click; their account numbers and region names repeat, so it shrinks
+# each redraw about threefold.
 CMD exec streamlit run app/streamlit_app.py \
     --server.port "${PORT:-8080}" \
     --server.address 0.0.0.0 \
     --server.enableCORS false \
-    --server.enableXsrfProtection false
+    --server.enableXsrfProtection false \
+    --server.enableWebsocketCompression true
