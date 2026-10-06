@@ -71,13 +71,39 @@ def staged_gis_ids() -> set[str]:
     return ids
 
 
+def roll_roster() -> list[dict]:
+    """Every real-property parcel in the latest certified roll.
+
+    The search will not return the whole county in one export, but the roll
+    already lists every account with the same parcel id the page is keyed by.
+    """
+    from . import warehouse
+    con = warehouse.connect(read_only=True)
+    try:
+        return [{"account": a, "gis_parcel_id": g} for a, g in con.execute(
+            "SELECT DISTINCT account, gis_parcel_id FROM stg.bulk_parcel_year "
+            "WHERE gis_parcel_id IS NOT NULL AND tax_year = "
+            "(SELECT MAX(tax_year) FROM stg.bulk_parcel_year) "
+            "ORDER BY gis_parcel_id").fetchall()]
+    finally:
+        con.close()
+
+
 def crawl(criteria: dict, *, workers: int = 3, rate: float = 3.0,
           limit: int | None = None, label: str | None = None,
-          log: Path | None = None) -> Progress:
-    """Fetch, parse and stage every parcel matching `criteria`."""
-    roster = acquire.search_parcels(Client(), label=label, **criteria)
-    have = staged_gis_ids()
-    todo = [r for r in roster if r.get("gis_parcel_id") not in have]
+          log: Path | None = None, from_roll: bool = False) -> Progress:
+    """Fetch, parse and stage every parcel matching `criteria`, or every
+    parcel in the certified roll."""
+    if from_roll:
+        # The roll carries the account, and a staged file is named by it, so
+        # a directory listing says what is held -- no need to open 60k files.
+        roster = roll_roster()
+        have = staged_accounts()
+        todo = [r for r in roster if r["account"] not in have]
+    else:
+        roster = acquire.search_parcels(Client(), label=label, **criteria)
+        have = staged_gis_ids()
+        todo = [r for r in roster if r.get("gis_parcel_id") not in have]
     # Count what the resume skipped before --limit trims the batch, or a small
     # test run reports the entire county as already held.
     already = len(roster) - len(todo)

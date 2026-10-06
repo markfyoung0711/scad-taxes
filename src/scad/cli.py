@@ -74,7 +74,8 @@ def cmd_crawl(args) -> int:
 
     log = Path(args.log) if args.log else None
     result = crawl.crawl(_criteria(args), workers=args.workers, rate=args.rate,
-                         limit=args.limit, label=args.label, log=log)
+                         limit=args.limit, label=args.label, log=log,
+                         from_roll=args.from_roll)
     print(f"staged {result.done} of {result.total} "
           f"({result.skipped} already held, {len(result.failed)} failed)",
           file=sys.stderr)
@@ -194,6 +195,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="requests per second across all workers")
     p.add_argument("--limit", type=int, help="stop after N new parcels")
     p.add_argument("--log", help="file to write progress into")
+    p.add_argument("--from-roll", action="store_true",
+                   help="crawl every parcel in the certified roll, ignoring "
+                        "the search criteria")
     p.set_defaults(func=cmd_crawl)
 
     p = sub.add_parser("geocode", help="locate warehoused parcels against county GIS")
