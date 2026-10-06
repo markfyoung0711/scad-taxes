@@ -160,6 +160,11 @@ Rates are published per $100 of value.
 uv run streamlit run app/streamlit_app.py
 ```
 
+Two pages: **Parcel lookup** and **Heat map** (`/heatmap`). The heat map bins
+located parcels into square cells and colors each by the median change between
+two chosen years in tax bill, market value, assessed value, or combined rate —
+red a rise, blue a cut. Median, so one new build does not paint a block red.
+
 Value and tax are different units, so both are rebased to 100 in each account's
 own first published year — one honest axis, where the gap between a dashed line
 and its solid partner is how far the tax bill diverged from the appraisal.

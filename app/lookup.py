@@ -19,14 +19,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import data
-import gate
 import summary
 from theme import style, tokens
-
-st.set_page_config(page_title="Smith CAD value & tax trends", layout="wide")
-
-# Before anything is rendered or queried.
-gate.check()
 
 # Three lines, because two of them hide the story. Market value is what the
 # district thinks the property is worth; assessed value is what it may actually
@@ -115,8 +109,9 @@ if term and matches.empty:
         st.warning(f"“{term}” is in the certified roll but has no "
                    f"year-by-year history yet — {len(county)} match(es) below.")
         st.caption(
-            "History is crawled town by town and Tyler, Lindale, Winona and "
-            "part of Kilgore are done so far. The roll covers all 144,373 "
+            "Year-by-year history is crawled from the district's parcel "
+            "pages, and only Tyler addresses are complete so far; the rest "
+            "of the county is in progress. The roll covers all 144,373 "
             "county accounts, but only for the current year.")
         st.dataframe(
             county[["account", "owner_name", "situs_address", "use_code",
@@ -185,8 +180,11 @@ t = tokens(mode)
 years = data.by_year(tuple(picked))
 
 # One hue per sector across the whole warehouse, not just the selection, so
-# changing what is selected never repaints the sectors that remain.
-sector_color = {name: t["series"][i % len(t["series"])]
+# changing what is selected never repaints the sectors that remain. Red is
+# left out: on every map in this app red means high or rising taxes, and a
+# red sector would read as a verdict on it.
+sector_palette = [c for c in t["series"] if c != t["neg"]]
+sector_color = {name: sector_palette[i % len(sector_palette)]
                 for i, name in enumerate(data.all_sectors())}
 # Colouring by measure puts market value against tax paid for one account;
 # the account is then carried by the dash pattern instead.

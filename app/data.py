@@ -155,3 +155,69 @@ def by_jurisdiction(selected: tuple[str, ...]) -> pd.DataFrame:
         "SELECT * FROM mart.v_jurisdiction_change WHERE account IN "
         f"({','.join('?' * len(selected))}) ORDER BY account, tax_year, jurisdiction",
         list(selected)).df()
+
+
+@st.cache_data
+def tax_years() -> list[int]:
+    return [r[0] for r in _con().execute(
+        "SELECT DISTINCT tax_year FROM mart.fact_parcel_year ORDER BY 1").fetchall()]
+
+
+@st.cache_data
+def change_between(start: int, end: int) -> pd.DataFrame:
+    """Every located parcel's values in two years, side by side.
+
+    Measured year to year directly rather than from each parcel's own base, so
+    a range means the same span for every parcel on the map. A parcel missing
+    either year is left out rather than compared across a different span.
+
+    The combined rate is the sum of the published jurisdiction rates -- the
+    nominal rate an owner is exposed to, before exemptions, which is the part
+    of the bill set by the taxing units rather than by the appraisal.
+    """
+    return _con().execute(
+        """WITH rate AS (
+               SELECT account, tax_year, SUM(tax_rate) AS combined_rate
+               FROM mart.fact_parcel_jurisdiction_year
+               WHERE tax_year IN (?, ?) GROUP BY ALL),
+           yr AS (
+               SELECT f.account, f.tax_year, f.market_value, f.assessed_value,
+                      f.total_tax, f.building_value, r.combined_rate
+               FROM mart.fact_parcel_year f
+               LEFT JOIN rate r USING (account, tax_year)
+               WHERE f.tax_year IN (?, ?))
+           SELECT p.account, p.owner_name, p.situs_address, p.sector,
+                  p.homestead_shown, l.latitude, l.longitude,
+                  p.subdivision, l.gis_city, l.gis_zip, l.voting_precinct_name,
+                  n.neighborhood,
+                  a.market_value   AS market_start,   b.market_value   AS market_end,
+                  a.assessed_value AS assessed_start, b.assessed_value AS assessed_end,
+                  a.total_tax      AS tax_start,      b.total_tax      AS tax_end,
+                  a.combined_rate  AS rate_start,     b.combined_rate  AS rate_end,
+                  a.building_value AS building_start, b.building_value AS building_end
+           FROM mart.dim_parcel p
+           JOIN mart.dim_parcel_location l USING (gis_parcel_id)
+           JOIN yr a ON a.account = p.account AND a.tax_year = ?
+           JOIN yr b ON b.account = p.account AND b.tax_year = ?
+           -- The appraisal neighborhood lives only on the certified roll.
+           LEFT JOIN (SELECT account, ANY_VALUE(neighborhood) AS neighborhood
+                      FROM stg.bulk_parcel_year GROUP BY account) n
+                  ON n.account = p.account
+           WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL""",
+        [start, end, start, end, start, end]).df()
+
+
+@st.cache_data
+def rates_carried_over(year: int) -> float:
+    """Share of taxing units whose rate in `year` is the same as the year
+    before -- high when `year`'s rates are not adopted yet and the district
+    is repeating last year's."""
+    row = _con().execute(
+        """WITH r AS (SELECT jurisdiction, tax_year, MODE(tax_rate) AS rate
+                      FROM mart.fact_parcel_jurisdiction_year
+                      WHERE tax_year IN (?, ?) GROUP BY ALL)
+           SELECT AVG(CASE WHEN a.rate = b.rate THEN 1.0 ELSE 0.0 END)
+           FROM r a JOIN r b ON a.jurisdiction = b.jurisdiction
+           WHERE a.tax_year = ? AND b.tax_year = ?""",
+        [year - 1, year, year, year - 1]).fetchone()
+    return float(row[0] or 0.0)
